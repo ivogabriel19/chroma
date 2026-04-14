@@ -8,3 +8,19 @@ if (!supabaseUrl || !supabaseAnonKey) {
 }
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey);
+
+// Para páginas server-side: setea la sesión desde las cookies de la request
+export async function getSessionFromCookies(cookies: Record<string, string>) {
+  const accessToken = cookies['sb-access-token'];
+  const refreshToken = cookies['sb-refresh-token'];
+
+  if (!accessToken || !refreshToken) return null;
+
+  const { data, error } = await supabase.auth.setSession({
+    access_token: accessToken,
+    refresh_token: refreshToken,
+  });
+
+  if (error) return null;
+  return data.session;
+}

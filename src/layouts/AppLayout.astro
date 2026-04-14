@@ -1,13 +1,23 @@
 ---
+// src/layouts/AppLayout.astro
 import BaseLayout from './BaseLayout.astro';
-import { supabase } from '../lib/supabase';
+import { getSessionFromCookies } from '../lib/supabase';
 
 interface Props {
   title?: string;
 }
 const { title = 'Paletas' } = Astro.props;
 
-const { data: { session } } = await supabase.auth.getSession();
+// Convertimos las cookies de Astro a un objeto plano
+const cookieHeader = Astro.request.headers.get('cookie') ?? '';
+const cookies = Object.fromEntries(
+  cookieHeader.split(';').map(c => {
+    const [k, ...v] = c.trim().split('=');
+    return [k, v.join('=')];
+  })
+);
+
+const session = await getSessionFromCookies(cookies);
 if (!session) return Astro.redirect('/login');
 
 const user = session.user;
