@@ -10,108 +10,240 @@ const cookieMap = Object.fromEntries(
     return [k, v.join('=')];
   })
 );
-
 const session = await getSessionFromCookies(cookieMap);
 if (!session) return Astro.redirect('/login');
 
 const { id } = Astro.params;
 const palette = await getPaletteById(id!);
+if (!palette || palette.user_id !== session.user.id) return Astro.redirect('/dashboard');
 
-if (!palette || palette.user_id !== session.user.id) {
-  return Astro.redirect('/dashboard');
-}
-
-const colors = palette.colors ?? [];
+const colors = (palette.colors ?? []).sort((a, b) => a.position - b.position);
 ---
 
 <AppLayout title={palette.name}>
-  <div class="detail-header">
-    <a href="/dashboard" class="back-link">← Volver</a>
-    <h2>{palette.name}</h2>
-    <span class="meta">{colors.length} colores · {new Date(palette.created_at).toLocaleDateString('es-AR')}</span>
-  </div>
+  <div class="detail-page">
+    <div class="detail-header">
+      <a href="/dashboard" class="back-link">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+          <path d="M10 12L6 8l4-4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+        Volver
+      </a>
+      <div>
+        <h1>{palette.name}</h1>
+        <p class="meta">
+          <span>{colors.length} color{colors.length !== 1 ? 'es' : ''}</span>
+          <span class="dot">·</span>
+          <span>{new Date(palette.created_at).toLocaleDateString('es-AR', { day:'numeric', month:'long', year:'numeric' })}</span>
+        </p>
+      </div>
+    </div>
 
-  <div class="colors-strip">
-    {colors
-      .sort((a, b) => a.position - b.position)
-      .map(c => (
-        <div class="color-item">
-          <div class="color-swatch" style={`background: ${c.hex}`} />
-          <div class="color-info">
-            <span class="color-hex">{c.hex.toUpperCase()}</span>
-            {c.name && <span class="color-name">{c.name}</span>}
-            <button class="btn-copy" data-hex={c.hex}>Copiar</button>
+    <!-- Vista pantalla completa estilo Coolors -->
+    <div class="fullscreen-palette">
+      {colors.map(c => (
+        <div class="color-col" style={`background:${c.hex}`} data-hex={c.hex}>
+          <div class="color-overlay">
+            <span class="color-name-display">{c.name ?? ''}</span>
+            <span class="color-hex-display">{c.hex.toUpperCase()}</span>
+            <button class="btn-copy-full" data-hex={c.hex}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
+                <rect x="9" y="9" width="13" height="13" rx="2" stroke="currentColor" stroke-width="2"/>
+                <path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1" stroke="currentColor" stroke-width="2"/>
+              </svg>
+              <span>Copiar</span>
+            </button>
           </div>
         </div>
-      ))
-    }
+      ))}
+    </div>
+
+    <!-- Lista detallada -->
+    <div class="colors-list">
+      {colors.map(c => (
+        <div class="color-row">
+          <div class="color-dot" style={`background:${c.hex}`} />
+          <div class="color-details">
+            <span class="hex-tag">{c.hex.toUpperCase()}</span>
+            {c.name && <span class="name-tag">{c.name}</span>}
+          </div>
+          <button class="btn-copy-small" data-hex={c.hex}>Copiar HEX</button>
+        </div>
+      ))}
+    </div>
   </div>
 </AppLayout>
 
 <script>
-  document.querySelectorAll('.btn-copy').forEach(btn => {
-    btn.addEventListener('click', () => {
+  document.querySelectorAll('[data-hex]').forEach(el => {
+    const btn = el.classList.contains('btn-copy-full') || el.classList.contains('btn-copy-small')
+      ? el : null;
+    if (!btn) return;
+
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
       const hex = (btn as HTMLElement).dataset.hex ?? '';
       navigator.clipboard.writeText(hex);
-      btn.textContent = '¡Copiado!';
-      setTimeout(() => btn.textContent = 'Copiar', 1500);
+
+      const span = btn.querySelector('span') ?? btn;
+      const original = span.textContent;
+      span.textContent = '✓ Copiado';
+      setTimeout(() => span.textContent = original, 1500);
     });
   });
 </script>
 
 <style>
-  .detail-header {
-    margin-bottom: 2rem;
-  }
+  .detail-page { display: flex; flex-direction: column; gap: 2.5rem; }
+
+  .detail-header { display: flex; flex-direction: column; gap: 0.75rem; }
+
   .back-link {
-    color: #6b7280;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    color: var(--text-3);
     text-decoration: none;
-    font-size: 0.9rem;
+    font-size: 0.85rem;
+    transition: color 0.15s;
+    width: fit-content;
   }
-  .back-link:hover { color: #111; }
-  h2 { margin: 0.5rem 0 0.25rem; font-size: 1.8rem; }
-  .meta { color: #9ca3af; font-size: 0.9rem; }
-  .colors-strip {
+  .back-link:hover { color: var(--text); }
+
+  h1 {
+    font-size: 2rem;
+    font-weight: 800;
+    letter-spacing: -0.04em;
+  }
+  .meta {
     display: flex;
-    gap: 1rem;
-    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.5rem;
+    color: var(--text-3);
+    font-family: var(--font-mono);
+    font-size: 0.8rem;
   }
-  .color-item {
-    flex: 1;
-    min-width: 140px;
-    max-width: 200px;
-    border-radius: 10px;
+  .dot { color: var(--border-2); }
+
+  /* Fullscreen palette viewer */
+  .fullscreen-palette {
+    display: flex;
+    height: 320px;
+    border-radius: var(--radius-lg);
     overflow: hidden;
-    border: 1px solid #e5e7eb;
+    border: 1px solid var(--border);
   }
-  .color-swatch {
-    height: 140px;
+
+  .color-col {
+    flex: 1;
+    position: relative;
+    transition: flex 0.3s ease;
+    cursor: default;
   }
-  .color-info {
-    padding: 0.75rem;
+  .color-col:hover { flex: 1.8; }
+
+  .color-overlay {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    padding: 1.25rem 1rem;
+    background: linear-gradient(to top, rgba(0,0,0,0.55), transparent);
     display: flex;
     flex-direction: column;
-    gap: 0.25rem;
-    background: white;
+    gap: 0.2rem;
+    opacity: 0;
+    transition: opacity 0.2s;
   }
-  .color-hex {
-    font-family: monospace;
-    font-weight: 700;
+  .color-col:hover .color-overlay { opacity: 1; }
+
+  .color-name-display {
+    font-size: 0.7rem;
+    color: rgba(255,255,255,0.7);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .color-hex-display {
+    font-family: var(--font-mono);
+    font-weight: 500;
     font-size: 0.95rem;
+    color: white;
   }
-  .color-name {
-    font-size: 0.8rem;
-    color: #6b7280;
-  }
-  .btn-copy {
-    margin-top: 0.25rem;
-    padding: 0.3rem 0.6rem;
-    border: 1px solid #e5e7eb;
-    border-radius: 5px;
-    background: white;
-    font-size: 0.8rem;
+  .btn-copy-full {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    margin-top: 0.4rem;
+    padding: 0.35rem 0.7rem;
+    background: rgba(255,255,255,0.15);
+    border: 1px solid rgba(255,255,255,0.25);
+    border-radius: 6px;
+    color: white;
+    font-family: var(--font-display);
+    font-size: 0.75rem;
+    font-weight: 600;
     cursor: pointer;
-    align-self: flex-start;
+    backdrop-filter: blur(4px);
+    transition: background 0.15s;
+    width: fit-content;
   }
-  .btn-copy:hover { background: #f3f4f6; }
+  .btn-copy-full:hover { background: rgba(255,255,255,0.25); }
+
+  /* Lista */
+  .colors-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+  .color-row {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    padding: 0.75rem 1rem;
+    background: var(--bg-2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    transition: border-color 0.15s;
+  }
+  .color-row:hover { border-color: var(--border-2); }
+
+  .color-dot {
+    width: 36px;
+    height: 36px;
+    border-radius: 8px;
+    flex-shrink: 0;
+    border: 1px solid rgba(255,255,255,0.05);
+  }
+  .color-details {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    flex: 1;
+  }
+  .hex-tag {
+    font-family: var(--font-mono);
+    font-size: 0.9rem;
+    font-weight: 500;
+  }
+  .name-tag {
+    font-size: 0.82rem;
+    color: var(--text-3);
+  }
+  .btn-copy-small {
+    padding: 0.35rem 0.75rem;
+    background: var(--bg-3);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--text-2);
+    font-family: var(--font-display);
+    font-size: 0.78rem;
+    cursor: pointer;
+    transition: border-color 0.15s, color 0.15s;
+    white-space: nowrap;
+  }
+  .btn-copy-small:hover {
+    border-color: var(--accent);
+    color: var(--accent);
+  }
 </style>

@@ -1,222 +1,354 @@
 ---
-import AppLayout from '../../layouts/AppLayout.astro';
-import { getSessionFromCookies } from '../../lib/supabase';
+import AppLayout from "../../layouts/AppLayout.astro";
+import { getSessionFromCookies } from "../../lib/supabase";
 
-const cookieHeader = Astro.request.headers.get('cookie') ?? '';
+const cookieHeader = Astro.request.headers.get("cookie") ?? "";
 const cookieMap = Object.fromEntries(
-  cookieHeader.split(';').map(c => {
-    const [k, ...v] = c.trim().split('=');
-    return [k, v.join('=')];
-  })
+  cookieHeader.split(";").map((c) => {
+    const [k, ...v] = c.trim().split("=");
+    return [k, v.join("=")];
+  }),
 );
-
 const session = await getSessionFromCookies(cookieMap);
-if (!session) return Astro.redirect('/login');
+if (!session) return Astro.redirect("/login");
 ---
 
 <AppLayout title="Nueva paleta">
-  <div class="new-header">
-    <a href="/dashboard" class="back-link">← Volver</a>
-    <h2>Nueva paleta</h2>
-  </div>
+  <div class="generator-page">
+    <div class="gen-header">
+      <div>
+        <a href="/dashboard" class="back-link">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+            <path
+              d="M10 12L6 8l4-4"
+              stroke="currentColor"
+              stroke-width="1.8"
+              stroke-linecap="round"
+              stroke-linejoin="round"></path>
+          </svg>
+          Volver
+        </a>
+        <h1>Nueva paleta</h1>
+      </div>
+      <div class="spacebar-hint">
+        <kbd>Espacio</kbd> para generar
+      </div>
+    </div>
 
-  <div class="generator">
     <!-- Controles -->
-    <div class="controls">
+    <div class="controls-bar">
       <div class="control-group">
         <label for="harmony">Harmonía</label>
         <select id="harmony">
           <option value="analogous">Análogo</option>
           <option value="complementary">Complementario</option>
           <option value="triadic">Triádico</option>
-          <option value="split-complementary">Split-complementario</option>
+          <option value="split-complementary">Split-compl.</option>
           <option value="tetradic">Tetrádico</option>
           <option value="monochromatic">Monocromático</option>
         </select>
       </div>
 
       <div class="control-group">
-        <label for="base-color">Color base</label>
+        <label>Color base</label>
         <div class="color-input-row">
           <input type="color" id="base-color-picker" value="#6366f1" />
-          <input type="text" id="base-color-hex" value="#6366f1" maxlength="7" placeholder="#rrggbb" />
+          <input
+            type="text"
+            id="base-color-hex"
+            value="#6366f1"
+            maxlength="7"
+          />
         </div>
       </div>
 
       <div class="control-group">
-        <label for="count">Cantidad de colores</label>
+        <label for="count">Colores: <span id="count-label">5</span></label>
         <input type="range" id="count" min="3" max="8" value="5" />
-        <span id="count-label">5</span>
       </div>
 
-      <button id="btn-generate" class="btn-primary">🎲 Generar aleatoria</button>
+      <div class="controls-actions">
+        <button id="btn-random" class="btn-secondary">🎲 Aleatorio</button>
+        <button id="btn-from-base" class="btn-secondary">🎨 Desde base</button>
+      </div>
     </div>
 
-    <!-- Preview de la paleta -->
-    <div id="palette-preview" class="palette-preview">
-      <p class="preview-hint">Hacé clic en "Generar" para ver una paleta.</p>
+    <!-- Paleta fullscreen -->
+    <div id="palette-view" class="palette-view">
+      <div class="palette-placeholder">
+        <span class="placeholder-icon">◈</span>
+        <p>Presioná <kbd>Espacio</kbd> o hacé clic en "Aleatorio"</p>
+      </div>
     </div>
 
     <!-- Guardar -->
-    <div id="save-section" class="save-section" style="display:none">
-      <input type="text" id="palette-name" placeholder="Nombre de la paleta" maxlength="50" />
-      <button id="btn-save" class="btn-primary">💾 Guardar paleta</button>
+    <div id="save-bar" class="save-bar hidden">
+      <input
+        type="text"
+        id="palette-name"
+        placeholder="Nombre de la paleta…"
+        maxlength="50"
+      />
+      <button id="btn-save" class="btn-save">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none">
+          <path
+            d="M19 21H5a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v11a2 2 0 01-2 2z"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"></path>
+          <path
+            d="M17 21v-8H7v8M7 3v5h8"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"></path>
+        </svg>
+        Guardar paleta
+      </button>
     </div>
   </div>
 </AppLayout>
 
 <script>
-  import { generatePalette, enrichWithNames, hexToHsl, hslToHex } from '../../lib/colors';
-  import type { GeneratedColor, HarmonyType } from '../../lib/colors';
+  import { generatePalette, enrichWithNames } from "../../lib/colors";
+  import type { GeneratedColor, HarmonyType } from "../../lib/colors";
 
   let currentColors: GeneratedColor[] = [];
+  let isLoading = false;
 
-  const harmonyEl   = document.getElementById('harmony') as HTMLSelectElement;
-  const pickerEl    = document.getElementById('base-color-picker') as HTMLInputElement;
-  const hexInputEl  = document.getElementById('base-color-hex') as HTMLInputElement;
-  const countEl     = document.getElementById('count') as HTMLInputElement;
-  const countLabel  = document.getElementById('count-label')!;
-  const btnGenerate = document.getElementById('btn-generate')!;
-  const previewEl   = document.getElementById('palette-preview')!;
-  const saveSection = document.getElementById('save-section')!;
-  const nameInput   = document.getElementById('palette-name') as HTMLInputElement;
-  const btnSave     = document.getElementById('btn-save')!;
+  const harmonyEl = document.getElementById("harmony") as HTMLSelectElement;
+  const pickerEl = document.getElementById(
+    "base-color-picker",
+  ) as HTMLInputElement;
+  const hexInputEl = document.getElementById(
+    "base-color-hex",
+  ) as HTMLInputElement;
+  const countEl = document.getElementById("count") as HTMLInputElement;
+  const countLabel = document.getElementById("count-label")!;
+  const btnRandom = document.getElementById("btn-random")!;
+  const btnFromBase = document.getElementById("btn-from-base")!;
+  const paletteView = document.getElementById("palette-view")!;
+  const saveBar = document.getElementById("save-bar")!;
+  const nameInput = document.getElementById("palette-name") as HTMLInputElement;
+  const btnSave = document.getElementById("btn-save")!;
 
-  // Sincronizar picker y hex input
-  pickerEl.addEventListener('input', () => {
+  // Sync color picker ↔ text
+  pickerEl.addEventListener("input", () => {
     hexInputEl.value = pickerEl.value;
   });
-  hexInputEl.addEventListener('input', () => {
-    if (/^#[0-9a-fA-F]{6}$/.test(hexInputEl.value)) {
+  hexInputEl.addEventListener("input", () => {
+    if (/^#[0-9a-fA-F]{6}$/.test(hexInputEl.value))
       pickerEl.value = hexInputEl.value;
-    }
   });
-
-  countEl.addEventListener('input', () => {
+  countEl.addEventListener("input", () => {
     countLabel.textContent = countEl.value;
   });
 
-  async function generate(useBase = true) {
-    btnGenerate.textContent = '⏳ Generando...';
-    btnGenerate.setAttribute('disabled', 'true');
+  // Regenerar cuando cambia harmonía (si ya hay paleta generada)
+  harmonyEl.addEventListener("change", () => {
+    if (currentColors.length) generate(false);
+  });
+
+  async function generate(random: boolean) {
+    if (isLoading) return;
+    isLoading = true;
+
+    // Mostrar estado de carga
+    paletteView.innerHTML =
+      '<div class="loading-state">Generando<span class="dots">...</span></div>';
 
     const harmony = harmonyEl.value as HarmonyType;
-    const count   = parseInt(countEl.value);
-    const baseHex = useBase ? pickerEl.value : undefined;
+    const count = parseInt(countEl.value);
+    const baseHex = random ? undefined : pickerEl.value;
 
-    // 1. Generar colores con la lógica local
     const raw = generatePalette(harmony, count, baseHex);
-
-    // 2. Enriquecer con nombres de TheColorAPI
     currentColors = await enrichWithNames(raw);
 
-    renderPreview(currentColors);
+    // Sync picker al color base resultante
+    if (currentColors.length > 0) {
+      pickerEl.value = currentColors[0].hex;
+      hexInputEl.value = currentColors[0].hex;
+    }
 
-    btnGenerate.textContent = '🎲 Generar aleatoria';
-    btnGenerate.removeAttribute('disabled');
-    saveSection.style.display = 'flex';
+    renderPalette();
+    saveBar.classList.remove("hidden");
+    isLoading = false;
   }
 
-  function renderPreview(colors: GeneratedColor[]) {
-    previewEl.innerHTML = '';
+  function renderPalette() {
+    paletteView.innerHTML = "";
 
-    const strip = document.createElement('div');
-    strip.className = 'color-strip';
+    const strip = document.createElement("div");
+    strip.className = "color-strip";
 
-    colors.forEach(c => {
-      const item = document.createElement('div');
-      item.className = 'color-item';
-      item.innerHTML = `
-        <div class="swatch" style="background:${c.hex}"></div>
-        <div class="info">
-          <span class="hex">${c.hex.toUpperCase()}</span>
-          <span class="name">${c.name ?? ''}</span>
-        </div>
-      `;
-      strip.appendChild(item);
+    currentColors.forEach((c, i) => {
+      const col = document.createElement("div");
+      col.className = "color-col";
+      col.style.cssText = `background:${c.hex}; animation-delay:${i * 50}ms`;
+
+      const overlay = document.createElement("div");
+      overlay.className = "color-overlay";
+      overlay.innerHTML = `
+      <span class="color-name-display">${c.name ?? ""}</span>
+      <span class="color-hex-display">${c.hex.toUpperCase()}</span>
+      <button class="btn-copy-col" data-hex="${c.hex}">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none">
+          <rect x="9" y="9" width="13" height="13" rx="2" stroke="currentColor" stroke-width="2"/>
+          <path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1" stroke="currentColor" stroke-width="2"/>
+        </svg>
+        <span>Copiar</span>
+      </button>
+    `;
+
+      col.appendChild(overlay);
+      strip.appendChild(col);
     });
 
-    previewEl.appendChild(strip);
+    paletteView.appendChild(strip);
+
+    // Bind copy buttons
+    strip.querySelectorAll(".btn-copy-col").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const hex = (btn as HTMLElement).dataset.hex ?? "";
+        navigator.clipboard.writeText(hex);
+        const span = btn.querySelector("span")!;
+        span.textContent = "✓ Copiado";
+        setTimeout(() => (span.textContent = "Copiar"), 1500);
+      });
+    });
   }
 
-  btnGenerate.addEventListener('click', () => generate(false)); // aleatorio
+  btnRandom.addEventListener("click", () => generate(true));
+  btnFromBase.addEventListener("click", () => generate(false));
 
-  // También regenerar cuando cambia la harmonía o el color base manualmente
-  harmonyEl.addEventListener('change', () => {
-    if (currentColors.length > 0) generate(true);
-  });
-  pickerEl.addEventListener('change', () => {
-    if (currentColors.length > 0) generate(true);
+  // Barra espaciadora = generar
+  document.addEventListener("keydown", (e) => {
+    if (e.code === "Space" && document.activeElement?.tagName !== "INPUT") {
+      e.preventDefault();
+      generate(true);
+    }
   });
 
   // Guardar
-  btnSave.addEventListener('click', async () => {
+  btnSave.addEventListener("click", async () => {
     const name = nameInput.value.trim();
     if (!name) {
       nameInput.focus();
+      nameInput.classList.add("shake");
+      setTimeout(() => nameInput.classList.remove("shake"), 400);
       return;
     }
-    if (currentColors.length === 0) return;
+    if (!currentColors.length) return;
 
-    btnSave.textContent = '⏳ Guardando...';
-    btnSave.setAttribute('disabled', 'true');
+    btnSave.setAttribute("disabled", "true");
+    btnSave.innerHTML = "⏳ Guardando…";
 
-    const payload = {
-      name,
-      colors: currentColors.map((c, i) => ({
-        hex: c.hex,
-        name: c.name,
-        position: i,
-      })),
-    };
-
-    const res = await fetch('/api/palettes/create', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
+    const res = await fetch("/api/palettes/create", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name,
+        colors: currentColors.map((c, i) => ({
+          hex: c.hex,
+          name: c.name,
+          position: i,
+        })),
+      }),
     });
 
     if (res.ok) {
-      window.location.href = '/dashboard';
+      window.location.href = "/dashboard";
     } else {
-      alert('Error al guardar la paleta');
-      btnSave.textContent = '💾 Guardar paleta';
-      btnSave.removeAttribute('disabled');
+      btnSave.removeAttribute("disabled");
+      btnSave.textContent = "Error — reintentar";
     }
   });
 </script>
 
 <style>
-  .new-header { margin-bottom: 1.5rem; }
-  .back-link { color: #6b7280; text-decoration: none; font-size: 0.9rem; }
-  h2 { margin: 0.5rem 0 0; font-size: 1.6rem; }
+  .generator-page {
+    display: flex;
+    flex-direction: column;
+    gap: 1.75rem;
+  }
 
-  .generator { display: flex; flex-direction: column; gap: 2rem; }
+  .gen-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-end;
+  }
+  .back-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    color: var(--text-3);
+    text-decoration: none;
+    font-size: 0.85rem;
+    transition: color 0.15s;
+    margin-bottom: 0.4rem;
+  }
+  .back-link:hover {
+    color: var(--text);
+  }
+  h1 {
+    font-size: 2rem;
+    font-weight: 800;
+    letter-spacing: -0.04em;
+  }
 
-  .controls {
+  .spacebar-hint {
+    font-size: 0.8rem;
+    color: var(--text-3);
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+  }
+  kbd {
+    padding: 0.2rem 0.5rem;
+    background: var(--bg-3);
+    border: 1px solid var(--border-2);
+    border-radius: 5px;
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    color: var(--text-2);
+  }
+
+  /* Controls */
+  .controls-bar {
     display: flex;
     flex-wrap: wrap;
-    gap: 1.25rem;
     align-items: flex-end;
-    background: #f9fafb;
-    padding: 1.25rem;
-    border-radius: 10px;
-    border: 1px solid #e5e7eb;
+    gap: 1.25rem;
+    padding: 1.25rem 1.5rem;
+    background: var(--bg-2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
   }
   .control-group {
     display: flex;
     flex-direction: column;
     gap: 0.4rem;
-    font-size: 0.85rem;
-    font-weight: 500;
-    color: #374151;
   }
-  select, input[type="text"] {
+  label {
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: var(--text-3);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+  select {
+    background: var(--bg-3);
+    border: 1px solid var(--border);
+    border-radius: 7px;
+    color: var(--text);
     padding: 0.5rem 0.75rem;
-    border: 1px solid #d1d5db;
-    border-radius: 6px;
-    font-size: 0.95rem;
-    background: white;
+    font-family: var(--font-display);
+    font-size: 0.875rem;
+    cursor: pointer;
+    transition: border-color 0.15s;
+  }
+  select:focus {
+    outline: none;
+    border-color: var(--accent);
   }
   .color-input-row {
     display: flex;
@@ -224,70 +356,256 @@ if (!session) return Astro.redirect('/login');
     align-items: center;
   }
   input[type="color"] {
-    width: 40px;
-    height: 36px;
+    width: 38px;
+    height: 34px;
+    border: 1px solid var(--border);
+    border-radius: 7px;
     padding: 2px;
-    border: 1px solid #d1d5db;
-    border-radius: 6px;
+    background: var(--bg-3);
     cursor: pointer;
   }
-  input[type="range"] { width: 120px; }
-  .btn-primary {
-    padding: 0.6rem 1.2rem;
-    background: #6366f1;
-    color: white;
-    border: none;
+  input[type="text"] {
+    width: 90px;
+    background: var(--bg-3);
+    border: 1px solid var(--border);
+    border-radius: 7px;
+    padding: 0.5rem 0.6rem;
+    color: var(--text);
+    font-family: var(--font-mono);
+    font-size: 0.85rem;
+    transition: border-color 0.15s;
+  }
+  input[type="text"]:focus {
+    outline: none;
+    border-color: var(--accent);
+  }
+  input[type="range"] {
+    width: 110px;
+    accent-color: var(--accent);
+    cursor: pointer;
+  }
+  .controls-actions {
+    display: flex;
+    gap: 0.6rem;
+    align-self: flex-end;
+  }
+  .btn-secondary {
+    padding: 0.5rem 1rem;
+    background: var(--bg-3);
+    border: 1px solid var(--border);
     border-radius: 8px;
+    color: var(--text-2);
+    font-family: var(--font-display);
+    font-size: 0.875rem;
     font-weight: 600;
-    font-size: 0.95rem;
     cursor: pointer;
+    transition:
+      border-color 0.15s,
+      color 0.15s,
+      transform 0.1s;
   }
-  .btn-primary:hover:not(:disabled) { background: #4f46e5; }
-  .btn-primary:disabled { opacity: 0.6; cursor: not-allowed; }
+  .btn-secondary:hover {
+    border-color: var(--accent);
+    color: var(--accent);
+    transform: translateY(-1px);
+  }
 
-  .palette-preview { min-height: 160px; }
-  .preview-hint {
-    color: #9ca3af;
-    text-align: center;
-    padding: 3rem;
-    border: 2px dashed #e5e7eb;
-    border-radius: 10px;
-  }
-  .color-strip {
-    display: flex;
-    border-radius: 10px;
+  /* ── Palette view ── */
+  .palette-view {
+    height: 320px;
+    border-radius: var(--radius-lg);
     overflow: hidden;
-    height: 180px;
-    border: 1px solid #e5e7eb;
+    border: 1px solid var(--border);
+    background: var(--bg-2);
   }
-  .color-item {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-  }
-  .swatch { flex: 1; }
-  .info {
-    background: white;
-    padding: 0.5rem;
-    display: flex;
-    flex-direction: column;
-    gap: 0.15rem;
-    border-top: 1px solid #e5e7eb;
-  }
-  .hex { font-family: monospace; font-size: 0.8rem; font-weight: 700; }
-  .name { font-size: 0.72rem; color: #6b7280; }
 
-  .save-section {
+  .palette-placeholder {
+    height: 100%;
     display: flex;
-    gap: 1rem;
+    flex-direction: column;
     align-items: center;
+    justify-content: center;
+    gap: 0.75rem;
+    color: var(--text-3);
   }
+  .placeholder-icon {
+    font-size: 2.5rem;
+    color: var(--border-2);
+  }
+  .palette-placeholder p {
+    font-size: 0.875rem;
+  }
+
+  .loading-state {
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: var(--font-mono);
+    color: var(--text-3);
+    font-size: 0.9rem;
+    animation: pulse 1s infinite;
+  }
+  @keyframes pulse {
+    0%,
+    100% {
+      opacity: 0.4;
+    }
+    50% {
+      opacity: 1;
+    }
+  }
+
+  /* ── Color strip — ÚNICO bloque, sin duplicados ── */
+  /* ── Color strip — fuera del scope de Astro porque los genera JS ── */
+  :global(.color-strip) {
+    display: flex;
+    height: 100%;
+  }
+
+  :global(.color-col) {
+    flex: 1;
+    position: relative;
+    transition: flex 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+    animation: slideIn 0.35s ease both;
+    cursor: default;
+  }
+  :global(.color-col:hover) { flex: 1.8; }
+
+  :global(.color-overlay) {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    padding: 1.25rem 1rem;
+    background: linear-gradient(to top, rgba(0,0,0,0.55), transparent);
+    display: flex;
+    flex-direction: column;
+    gap: 0.2rem;
+    opacity: 0;
+    transition: opacity 0.2s;
+  }
+  :global(.color-col:hover .color-overlay) { opacity: 1; }
+
+  :global(.color-name-display) {
+    font-size: 0.7rem;
+    color: rgba(255,255,255,0.7);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  :global(.color-hex-display) {
+    font-family: var(--font-mono);
+    font-weight: 500;
+    font-size: 0.95rem;
+    color: white;
+  }
+
+  :global(.btn-copy-col) {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    margin-top: 0.4rem;
+    padding: 0.35rem 0.7rem;
+    background: rgba(255,255,255,0.15);
+    border: 1px solid rgba(255,255,255,0.25);
+    border-radius: 6px;
+    color: white;
+    font-family: var(--font-display);
+    font-size: 0.75rem;
+    font-weight: 600;
+    cursor: pointer;
+    backdrop-filter: blur(4px);
+    transition: background 0.15s;
+    width: fit-content;
+  }
+  :global(.btn-copy-col:hover) { background: rgba(255,255,255,0.25); }
+
+  /* ── Save bar ── */
+  .save-bar {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    padding: 1.25rem 1.5rem;
+    background: var(--bg-2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    animation: fadeUp 0.3s ease;
+  }
+  .save-bar.hidden {
+    display: none;
+  }
+
   #palette-name {
     flex: 1;
-    max-width: 320px;
-    padding: 0.6rem 0.8rem;
-    border: 1px solid #d1d5db;
+    max-width: 360px;
+    background: var(--bg-3);
+    border: 1px solid var(--border);
     border-radius: 8px;
-    font-size: 1rem;
+    padding: 0.7rem 1rem;
+    color: var(--text);
+    font-family: var(--font-display);
+    font-size: 0.95rem;
+    transition: border-color 0.15s;
+  }
+  #palette-name::placeholder {
+    color: var(--text-3);
+  }
+  #palette-name:focus {
+    outline: none;
+    border-color: var(--accent);
+  }
+  #palette-name.shake {
+    animation: shake 0.35s ease;
+  }
+
+  .btn-save {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.7rem 1.5rem;
+    background: var(--accent);
+    color: #0e0e11;
+    border: none;
+    border-radius: 8px;
+    font-family: var(--font-display);
+    font-weight: 700;
+    font-size: 0.9rem;
+    cursor: pointer;
+    transition:
+      background 0.15s,
+      transform 0.1s;
+    white-space: nowrap;
+  }
+  .btn-save:hover:not(:disabled) {
+    background: var(--accent-dim);
+    transform: translateY(-1px);
+  }
+  .btn-save:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+  }
+
+  @keyframes fadeUp {
+    from {
+      opacity: 0;
+      transform: translateY(8px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+  @keyframes shake {
+    0%,
+    100% {
+      transform: translateX(0);
+    }
+    25% {
+      transform: translateX(-6px);
+    }
+    75% {
+      transform: translateX(6px);
+    }
   }
 </style>

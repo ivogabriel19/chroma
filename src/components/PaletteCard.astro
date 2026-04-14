@@ -1,99 +1,100 @@
 ---
 import type { Palette } from '../lib/palettes';
-
-interface Props {
-  palette: Palette;
-}
+interface Props { palette: Palette }
 const { palette } = Astro.props;
-
-const colors = palette.colors ?? [];
-const preview = colors.slice(0, 5); // máximo 5 en la preview
+const colors = (palette.colors ?? []).slice(0, 6);
 ---
 
 <article class="palette-card" data-id={palette.id}>
-  <a href={`/dashboard/palette/${palette.id}`} class="card-link">
+  <a href={`/dashboard/palette/${palette.id}`} class="card-body">
     <div class="color-strip">
-      {preview.map(c => (
-        <div
-          class="color-block"
-          style={`background: ${c.hex}`}
-          title={c.name ?? c.hex}
-        />
-      ))}
-      {colors.length === 0 && (
-        <div class="color-block empty" />
-      )}
+      {colors.length > 0
+        ? colors.map(c => (
+            <div class="color-block" style={`background:${c.hex}`} />
+          ))
+        : <div class="color-block empty" />
+      }
     </div>
-    <div class="card-info">
+    <div class="card-meta">
       <span class="palette-name">{palette.name}</span>
-      <span class="palette-meta">{colors.length} colores</span>
+      <span class="palette-count">{colors.length} colores</span>
     </div>
   </a>
-
   <button class="btn-delete" data-id={palette.id} aria-label="Eliminar paleta">
-    ✕
+    <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+      <path d="M1 1l10 10M11 1L1 11" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+    </svg>
   </button>
 </article>
 
 <style>
   .palette-card {
     position: relative;
-    border: 1px solid #e5e7eb;
-    border-radius: 10px;
+    border-radius: var(--radius-lg);
     overflow: hidden;
-    background: white;
-    transition: box-shadow 0.15s;
+    background: var(--bg-2);
+    border: 1px solid var(--border);
+    transition: border-color 0.2s, transform 0.2s, box-shadow 0.2s;
+    cursor: pointer;
   }
   .palette-card:hover {
-    box-shadow: 0 4px 16px rgba(0,0,0,0.08);
+    border-color: var(--border-2);
+    transform: translateY(-3px);
+    box-shadow: 0 12px 32px rgba(0,0,0,0.4);
   }
-  .card-link {
-    text-decoration: none;
-    color: inherit;
-    display: block;
-  }
+
+  .card-body { display: block; text-decoration: none; color: inherit; }
+
   .color-strip {
     display: flex;
-    height: 80px;
+    height: 100px;
   }
-  .color-block {
-    flex: 1;
-  }
-  .color-block.empty {
-    background: #f3f4f6;
-  }
-  .card-info {
-    padding: 0.75rem 1rem;
+  .color-block { flex: 1; transition: flex 0.3s ease; }
+  .palette-card:hover .color-block { }
+  .color-block.empty { background: var(--bg-3); }
+
+  .card-meta {
+    padding: 0.9rem 1rem;
     display: flex;
     justify-content: space-between;
     align-items: center;
+    border-top: 1px solid var(--border);
   }
   .palette-name {
-    font-weight: 600;
-    font-size: 0.95rem;
+    font-weight: 700;
+    font-size: 0.9rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 70%;
   }
-  .palette-meta {
-    font-size: 0.8rem;
-    color: #9ca3af;
+  .palette-count {
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    color: var(--text-3);
   }
+
   .btn-delete {
     position: absolute;
-    top: 0.5rem;
-    right: 0.5rem;
-    background: rgba(0,0,0,0.4);
-    color: white;
-    border: none;
+    top: 0.6rem;
+    right: 0.6rem;
+    width: 26px;
+    height: 26px;
     border-radius: 50%;
-    width: 24px;
-    height: 24px;
-    font-size: 0.7rem;
+    background: rgba(14,14,17,0.7);
+    border: 1px solid var(--border-2);
+    color: var(--text-2);
     cursor: pointer;
-    display: none;
+    display: flex;
     align-items: center;
     justify-content: center;
-    line-height: 1;
+    opacity: 0;
+    transition: opacity 0.15s, color 0.15s, border-color 0.15s;
+    backdrop-filter: blur(4px);
   }
-  .palette-card:hover .btn-delete {
-    display: flex;
+  .palette-card:hover .btn-delete { opacity: 1; }
+  .btn-delete:hover {
+    color: var(--danger);
+    border-color: var(--danger);
   }
 </style>
