@@ -1,0 +1,293 @@
+---
+import AppLayout from '../../layouts/AppLayout.astro';
+import { getSessionFromCookies } from '../../lib/supabase';
+
+const cookieHeader = Astro.request.headers.get('cookie') ?? '';
+const cookieMap = Object.fromEntries(
+  cookieHeader.split(';').map(c => {
+    const [k, ...v] = c.trim().split('=');
+    return [k, v.join('=')];
+  })
+);
+
+const session = await getSessionFromCookies(cookieMap);
+if (!session) return Astro.redirect('/login');
+---
+
+<AppLayout title="Nueva paleta">
+  <div class="new-header">
+    <a href="/dashboard" class="back-link">← Volver</a>
+    <h2>Nueva paleta</h2>
+  </div>
+
+  <div class="generator">
+    <!-- Controles -->
+    <div class="controls">
+      <div class="control-group">
+        <label for="harmony">Harmonía</label>
+        <select id="harmony">
+          <option value="analogous">Análogo</option>
+          <option value="complementary">Complementario</option>
+          <option value="triadic">Triádico</option>
+          <option value="split-complementary">Split-complementario</option>
+          <option value="tetradic">Tetrádico</option>
+          <option value="monochromatic">Monocromático</option>
+        </select>
+      </div>
+
+      <div class="control-group">
+        <label for="base-color">Color base</label>
+        <div class="color-input-row">
+          <input type="color" id="base-color-picker" value="#6366f1" />
+          <input type="text" id="base-color-hex" value="#6366f1" maxlength="7" placeholder="#rrggbb" />
+        </div>
+      </div>
+
+      <div class="control-group">
+        <label for="count">Cantidad de colores</label>
+        <input type="range" id="count" min="3" max="8" value="5" />
+        <span id="count-label">5</span>
+      </div>
+
+      <button id="btn-generate" class="btn-primary">🎲 Generar aleatoria</button>
+    </div>
+
+    <!-- Preview de la paleta -->
+    <div id="palette-preview" class="palette-preview">
+      <p class="preview-hint">Hacé clic en "Generar" para ver una paleta.</p>
+    </div>
+
+    <!-- Guardar -->
+    <div id="save-section" class="save-section" style="display:none">
+      <input type="text" id="palette-name" placeholder="Nombre de la paleta" maxlength="50" />
+      <button id="btn-save" class="btn-primary">💾 Guardar paleta</button>
+    </div>
+  </div>
+</AppLayout>
+
+<script>
+  import { generatePalette, enrichWithNames, hexToHsl, hslToHex } from '../../lib/colors';
+  import type { GeneratedColor, HarmonyType } from '../../lib/colors';
+
+  let currentColors: GeneratedColor[] = [];
+
+  const harmonyEl   = document.getElementById('harmony') as HTMLSelectElement;
+  const pickerEl    = document.getElementById('base-color-picker') as HTMLInputElement;
+  const hexInputEl  = document.getElementById('base-color-hex') as HTMLInputElement;
+  const countEl     = document.getElementById('count') as HTMLInputElement;
+  const countLabel  = document.getElementById('count-label')!;
+  const btnGenerate = document.getElementById('btn-generate')!;
+  const previewEl   = document.getElementById('palette-preview')!;
+  const saveSection = document.getElementById('save-section')!;
+  const nameInput   = document.getElementById('palette-name') as HTMLInputElement;
+  const btnSave     = document.getElementById('btn-save')!;
+
+  // Sincronizar picker y hex input
+  pickerEl.addEventListener('input', () => {
+    hexInputEl.value = pickerEl.value;
+  });
+  hexInputEl.addEventListener('input', () => {
+    if (/^#[0-9a-fA-F]{6}$/.test(hexInputEl.value)) {
+      pickerEl.value = hexInputEl.value;
+    }
+  });
+
+  countEl.addEventListener('input', () => {
+    countLabel.textContent = countEl.value;
+  });
+
+  async function generate(useBase = true) {
+    btnGenerate.textContent = '⏳ Generando...';
+    btnGenerate.setAttribute('disabled', 'true');
+
+    const harmony = harmonyEl.value as HarmonyType;
+    const count   = parseInt(countEl.value);
+    const baseHex = useBase ? pickerEl.value : undefined;
+
+    // 1. Generar colores con la lógica local
+    const raw = generatePalette(harmony, count, baseHex);
+
+    // 2. Enriquecer con nombres de TheColorAPI
+    currentColors = await enrichWithNames(raw);
+
+    renderPreview(currentColors);
+
+    btnGenerate.textContent = '🎲 Generar aleatoria';
+    btnGenerate.removeAttribute('disabled');
+    saveSection.style.display = 'flex';
+  }
+
+  function renderPreview(colors: GeneratedColor[]) {
+    previewEl.innerHTML = '';
+
+    const strip = document.createElement('div');
+    strip.className = 'color-strip';
+
+    colors.forEach(c => {
+      const item = document.createElement('div');
+      item.className = 'color-item';
+      item.innerHTML = `
+        <div class="swatch" style="background:${c.hex}"></div>
+        <div class="info">
+          <span class="hex">${c.hex.toUpperCase()}</span>
+          <span class="name">${c.name ?? ''}</span>
+        </div>
+      `;
+      strip.appendChild(item);
+    });
+
+    previewEl.appendChild(strip);
+  }
+
+  btnGenerate.addEventListener('click', () => generate(false)); // aleatorio
+
+  // También regenerar cuando cambia la harmonía o el color base manualmente
+  harmonyEl.addEventListener('change', () => {
+    if (currentColors.length > 0) generate(true);
+  });
+  pickerEl.addEventListener('change', () => {
+    if (currentColors.length > 0) generate(true);
+  });
+
+  // Guardar
+  btnSave.addEventListener('click', async () => {
+    const name = nameInput.value.trim();
+    if (!name) {
+      nameInput.focus();
+      return;
+    }
+    if (currentColors.length === 0) return;
+
+    btnSave.textContent = '⏳ Guardando...';
+    btnSave.setAttribute('disabled', 'true');
+
+    const payload = {
+      name,
+      colors: currentColors.map((c, i) => ({
+        hex: c.hex,
+        name: c.name,
+        position: i,
+      })),
+    };
+
+    const res = await fetch('/api/palettes/create', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+
+    if (res.ok) {
+      window.location.href = '/dashboard';
+    } else {
+      alert('Error al guardar la paleta');
+      btnSave.textContent = '💾 Guardar paleta';
+      btnSave.removeAttribute('disabled');
+    }
+  });
+</script>
+
+<style>
+  .new-header { margin-bottom: 1.5rem; }
+  .back-link { color: #6b7280; text-decoration: none; font-size: 0.9rem; }
+  h2 { margin: 0.5rem 0 0; font-size: 1.6rem; }
+
+  .generator { display: flex; flex-direction: column; gap: 2rem; }
+
+  .controls {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1.25rem;
+    align-items: flex-end;
+    background: #f9fafb;
+    padding: 1.25rem;
+    border-radius: 10px;
+    border: 1px solid #e5e7eb;
+  }
+  .control-group {
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+    font-size: 0.85rem;
+    font-weight: 500;
+    color: #374151;
+  }
+  select, input[type="text"] {
+    padding: 0.5rem 0.75rem;
+    border: 1px solid #d1d5db;
+    border-radius: 6px;
+    font-size: 0.95rem;
+    background: white;
+  }
+  .color-input-row {
+    display: flex;
+    gap: 0.5rem;
+    align-items: center;
+  }
+  input[type="color"] {
+    width: 40px;
+    height: 36px;
+    padding: 2px;
+    border: 1px solid #d1d5db;
+    border-radius: 6px;
+    cursor: pointer;
+  }
+  input[type="range"] { width: 120px; }
+  .btn-primary {
+    padding: 0.6rem 1.2rem;
+    background: #6366f1;
+    color: white;
+    border: none;
+    border-radius: 8px;
+    font-weight: 600;
+    font-size: 0.95rem;
+    cursor: pointer;
+  }
+  .btn-primary:hover:not(:disabled) { background: #4f46e5; }
+  .btn-primary:disabled { opacity: 0.6; cursor: not-allowed; }
+
+  .palette-preview { min-height: 160px; }
+  .preview-hint {
+    color: #9ca3af;
+    text-align: center;
+    padding: 3rem;
+    border: 2px dashed #e5e7eb;
+    border-radius: 10px;
+  }
+  .color-strip {
+    display: flex;
+    border-radius: 10px;
+    overflow: hidden;
+    height: 180px;
+    border: 1px solid #e5e7eb;
+  }
+  .color-item {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+  }
+  .swatch { flex: 1; }
+  .info {
+    background: white;
+    padding: 0.5rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+    border-top: 1px solid #e5e7eb;
+  }
+  .hex { font-family: monospace; font-size: 0.8rem; font-weight: 700; }
+  .name { font-size: 0.72rem; color: #6b7280; }
+
+  .save-section {
+    display: flex;
+    gap: 1rem;
+    align-items: center;
+  }
+  #palette-name {
+    flex: 1;
+    max-width: 320px;
+    padding: 0.6rem 0.8rem;
+    border: 1px solid #d1d5db;
+    border-radius: 8px;
+    font-size: 1rem;
+  }
+</style>

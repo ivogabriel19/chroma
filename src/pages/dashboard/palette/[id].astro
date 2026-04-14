@@ -1,0 +1,117 @@
+---
+import AppLayout from '../../../layouts/AppLayout.astro';
+import { getSessionFromCookies } from '../../../lib/supabase';
+import { getPaletteById } from '../../../lib/palettes';
+
+const cookieHeader = Astro.request.headers.get('cookie') ?? '';
+const cookieMap = Object.fromEntries(
+  cookieHeader.split(';').map(c => {
+    const [k, ...v] = c.trim().split('=');
+    return [k, v.join('=')];
+  })
+);
+
+const session = await getSessionFromCookies(cookieMap);
+if (!session) return Astro.redirect('/login');
+
+const { id } = Astro.params;
+const palette = await getPaletteById(id!);
+
+if (!palette || palette.user_id !== session.user.id) {
+  return Astro.redirect('/dashboard');
+}
+
+const colors = palette.colors ?? [];
+---
+
+<AppLayout title={palette.name}>
+  <div class="detail-header">
+    <a href="/dashboard" class="back-link">← Volver</a>
+    <h2>{palette.name}</h2>
+    <span class="meta">{colors.length} colores · {new Date(palette.created_at).toLocaleDateString('es-AR')}</span>
+  </div>
+
+  <div class="colors-strip">
+    {colors
+      .sort((a, b) => a.position - b.position)
+      .map(c => (
+        <div class="color-item">
+          <div class="color-swatch" style={`background: ${c.hex}`} />
+          <div class="color-info">
+            <span class="color-hex">{c.hex.toUpperCase()}</span>
+            {c.name && <span class="color-name">{c.name}</span>}
+            <button class="btn-copy" data-hex={c.hex}>Copiar</button>
+          </div>
+        </div>
+      ))
+    }
+  </div>
+</AppLayout>
+
+<script>
+  document.querySelectorAll('.btn-copy').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const hex = (btn as HTMLElement).dataset.hex ?? '';
+      navigator.clipboard.writeText(hex);
+      btn.textContent = '¡Copiado!';
+      setTimeout(() => btn.textContent = 'Copiar', 1500);
+    });
+  });
+</script>
+
+<style>
+  .detail-header {
+    margin-bottom: 2rem;
+  }
+  .back-link {
+    color: #6b7280;
+    text-decoration: none;
+    font-size: 0.9rem;
+  }
+  .back-link:hover { color: #111; }
+  h2 { margin: 0.5rem 0 0.25rem; font-size: 1.8rem; }
+  .meta { color: #9ca3af; font-size: 0.9rem; }
+  .colors-strip {
+    display: flex;
+    gap: 1rem;
+    flex-wrap: wrap;
+  }
+  .color-item {
+    flex: 1;
+    min-width: 140px;
+    max-width: 200px;
+    border-radius: 10px;
+    overflow: hidden;
+    border: 1px solid #e5e7eb;
+  }
+  .color-swatch {
+    height: 140px;
+  }
+  .color-info {
+    padding: 0.75rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    background: white;
+  }
+  .color-hex {
+    font-family: monospace;
+    font-weight: 700;
+    font-size: 0.95rem;
+  }
+  .color-name {
+    font-size: 0.8rem;
+    color: #6b7280;
+  }
+  .btn-copy {
+    margin-top: 0.25rem;
+    padding: 0.3rem 0.6rem;
+    border: 1px solid #e5e7eb;
+    border-radius: 5px;
+    background: white;
+    font-size: 0.8rem;
+    cursor: pointer;
+    align-self: flex-start;
+  }
+  .btn-copy:hover { background: #f3f4f6; }
+</style>

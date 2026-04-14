@@ -1,0 +1,99 @@
+---
+import type { Palette } from '../lib/palettes';
+
+interface Props {
+  palette: Palette;
+}
+const { palette } = Astro.props;
+
+const colors = palette.colors ?? [];
+const preview = colors.slice(0, 5); // máximo 5 en la preview
+---
+
+<article class="palette-card" data-id={palette.id}>
+  <a href={`/dashboard/palette/${palette.id}`} class="card-link">
+    <div class="color-strip">
+      {preview.map(c => (
+        <div
+          class="color-block"
+          style={`background: ${c.hex}`}
+          title={c.name ?? c.hex}
+        />
+      ))}
+      {colors.length === 0 && (
+        <div class="color-block empty" />
+      )}
+    </div>
+    <div class="card-info">
+      <span class="palette-name">{palette.name}</span>
+      <span class="palette-meta">{colors.length} colores</span>
+    </div>
+  </a>
+
+  <button class="btn-delete" data-id={palette.id} aria-label="Eliminar paleta">
+    ✕
+  </button>
+</article>
+
+<style>
+  .palette-card {
+    position: relative;
+    border: 1px solid #e5e7eb;
+    border-radius: 10px;
+    overflow: hidden;
+    background: white;
+    transition: box-shadow 0.15s;
+  }
+  .palette-card:hover {
+    box-shadow: 0 4px 16px rgba(0,0,0,0.08);
+  }
+  .card-link {
+    text-decoration: none;
+    color: inherit;
+    display: block;
+  }
+  .color-strip {
+    display: flex;
+    height: 80px;
+  }
+  .color-block {
+    flex: 1;
+  }
+  .color-block.empty {
+    background: #f3f4f6;
+  }
+  .card-info {
+    padding: 0.75rem 1rem;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .palette-name {
+    font-weight: 600;
+    font-size: 0.95rem;
+  }
+  .palette-meta {
+    font-size: 0.8rem;
+    color: #9ca3af;
+  }
+  .btn-delete {
+    position: absolute;
+    top: 0.5rem;
+    right: 0.5rem;
+    background: rgba(0,0,0,0.4);
+    color: white;
+    border: none;
+    border-radius: 50%;
+    width: 24px;
+    height: 24px;
+    font-size: 0.7rem;
+    cursor: pointer;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    line-height: 1;
+  }
+  .palette-card:hover .btn-delete {
+    display: flex;
+  }
+</style>

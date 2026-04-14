@@ -1,0 +1,30 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro';
+---
+<BaseLayout title="Crear cuenta">
+  <div class="auth-container">
+    <div class="auth-card">
+      <h1>Crear cuenta</h1>
+
+      <form method="POST" action="/api/auth/register" class="auth-form">
+        <label>
+          Email
+          <input type="email" name="email" required />
+        </label>
+        <label>
+          Contraseña
+          <input type="password" name="password" minlength="6" required />
+        </label>
+        <button type="submit" class="btn-primary">Registrarse</button>
+      </form>
+
+      <p class="auth-link">
+        ¿Ya tenés cuenta? <a href="/login">Iniciá sesión</a>
+      </p>
+    </div>
+  </div>
+</BaseLayout>
+
+<style>
+  /* mismo CSS que login.astro */
+</style>

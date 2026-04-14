@@ -1,0 +1,94 @@
+---
+import AppLayout from '../../layouts/AppLayout.astro';
+import PaletteCard from '../../components/PaletteCard.astro';
+import { getSessionFromCookies, supabase } from '../../lib/supabase';
+import { getUserPalettes } from '../../lib/palettes';
+
+const cookieHeader = Astro.request.headers.get('cookie') ?? '';
+const cookieMap = Object.fromEntries(
+  cookieHeader.split(';').map(c => {
+    const [k, ...v] = c.trim().split('=');
+    return [k, v.join('=')];
+  })
+);
+
+const session = await getSessionFromCookies(cookieMap);
+if (!session) return Astro.redirect('/login');
+
+const palettes = await getUserPalettes(session.user.id);
+---
+
+<AppLayout title="Mis paletas">
+  <div class="dashboard-header">
+    <h2>Mis paletas</h2>
+    <a href="/dashboard/new" class="btn-primary">+ Nueva paleta</a>
+  </div>
+
+  {palettes.length === 0 ? (
+    <div class="empty-state">
+      <p>Todavía no tenés paletas.</p>
+      <a href="/dashboard/new" class="btn-primary">Crear mi primera paleta</a>
+    </div>
+  ) : (
+    <div class="palettes-grid" id="palettes-grid">
+      {palettes.map(p => <PaletteCard palette={p} />)}
+    </div>
+  )}
+</AppLayout>
+
+<script>
+  // Manejo de eliminación con fetch desde el cliente
+  document.getElementById('palettes-grid')?.addEventListener('click', async (e) => {
+    const btn = (e.target as HTMLElement).closest('.btn-delete') as HTMLElement | null;
+    if (!btn) return;
+
+    const id = btn.dataset.id;
+    if (!id || !confirm('¿Eliminar esta paleta?')) return;
+
+    const res = await fetch('/api/palettes/delete', {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id }),
+    });
+
+    if (res.ok) {
+      btn.closest('.palette-card')?.remove();
+    } else {
+      alert('Error al eliminar la paleta');
+    }
+  });
+</script>
+
+<style>
+  .dashboard-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 2rem;
+  }
+  h2 { margin: 0; font-size: 1.5rem; }
+  .btn-primary {
+    padding: 0.6rem 1.2rem;
+    background: #6366f1;
+    color: white;
+    border-radius: 8px;
+    text-decoration: none;
+    font-weight: 600;
+    font-size: 0.95rem;
+  }
+  .btn-primary:hover { background: #4f46e5; }
+  .palettes-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+    gap: 1.25rem;
+  }
+  .empty-state {
+    text-align: center;
+    padding: 4rem 2rem;
+    color: #6b7280;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 1rem;
+  }
+</style>
