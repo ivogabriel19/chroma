@@ -86,27 +86,41 @@ if (!session) return Astro.redirect("/login");
 
     <!-- Guardar -->
     <div id="save-bar" class="save-bar hidden">
-      <input
-        type="text"
-        id="palette-name"
-        placeholder="Nombre de la paleta…"
-        maxlength="50"
-      />
-      <button id="btn-save" class="btn-save">
-        <svg width="15" height="15" viewBox="0 0 24 24" fill="none">
-          <path
-            d="M19 21H5a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v11a2 2 0 01-2 2z"
-            stroke="currentColor"
-            stroke-width="2"
-            stroke-linecap="round"></path>
-          <path
-            d="M17 21v-8H7v8M7 3v5h8"
-            stroke="currentColor"
-            stroke-width="2"
-            stroke-linecap="round"></path>
-        </svg>
-        Guardar paleta
-      </button>
+      <div class="save-top">
+        <input
+          type="text"
+          id="palette-name"
+          placeholder="Nombre de la paleta…"
+          maxlength="50"
+        />
+        <button id="btn-save" class="btn-save">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none">
+            <path
+              d="M19 21H5a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v11a2 2 0 01-2 2z"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"></path>
+            <path
+              d="M17 21v-8H7v8M7 3v5h8"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"></path>
+          </svg>
+          Guardar paleta
+        </button>
+      </div>
+      <div class="save-tags">
+        <span class="tags-label">Etiquetas</span>
+        <div id="tags-box" class="tags-box">
+          <input
+            type="text"
+            id="tag-input"
+            class="tag-input"
+            placeholder="Escribí una etiqueta y presioná Enter…"
+            maxlength="30"
+          />
+        </div>
+      </div>
     </div>
   </div>
 </AppLayout>
@@ -134,6 +148,48 @@ if (!session) return Astro.redirect("/login");
   const nameInput = document.getElementById("palette-name") as HTMLInputElement;
   const btnSave = document.getElementById("btn-save")!;
   const variantPanel = document.getElementById("variant-panel")!;
+  const tagsBox    = document.getElementById("tags-box")!;
+  const tagInput   = document.getElementById("tag-input") as HTMLInputElement;
+
+  let currentTags: string[] = [];
+
+  function renderTags() {
+    // Borra todos los chips existentes (no el input)
+    tagsBox.querySelectorAll(".tag-chip").forEach(el => el.remove());
+    currentTags.forEach(tag => {
+      const chip = document.createElement("span");
+      chip.className = "tag-chip";
+      chip.textContent = tag;
+      const rm = document.createElement("button");
+      rm.className = "tag-chip-remove";
+      rm.type = "button";
+      rm.textContent = "×";
+      rm.addEventListener("click", () => {
+        currentTags = currentTags.filter(t => t !== tag);
+        renderTags();
+      });
+      chip.appendChild(rm);
+      tagsBox.insertBefore(chip, tagInput);
+    });
+  }
+
+  tagInput.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" || e.key === ",") {
+      e.preventDefault();
+      const val = tagInput.value.trim().replace(/,/g, "");
+      if (val && !currentTags.includes(val) && currentTags.length < 8) {
+        currentTags.push(val);
+        renderTags();
+      }
+      tagInput.value = "";
+    } else if (e.key === "Backspace" && tagInput.value === "" && currentTags.length) {
+      currentTags.pop();
+      renderTags();
+    }
+  });
+
+  // Hacer clic en el box enfoca el input
+  tagsBox.addEventListener("click", () => tagInput.focus());
 
   // Sync color picker ↔ text
   pickerEl.addEventListener("input", () => {
@@ -387,6 +443,7 @@ if (!session) return Astro.redirect("/login");
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         name,
+        tags: currentTags,
         colors: currentColors.map((c, i) => ({
           hex: c.hex,
           name: c.name,
@@ -750,21 +807,24 @@ if (!session) return Astro.redirect("/login");
   /* ── Save bar ── */
   .save-bar {
     display: flex;
-    align-items: center;
-    gap: 1rem;
+    flex-direction: column;
+    gap: 0.85rem;
     padding: 1.25rem 1.5rem;
     background: var(--bg-2);
     border: 1px solid var(--border);
     border-radius: var(--radius-lg);
     animation: fadeUp 0.3s ease;
   }
-  .save-bar.hidden {
-    display: none;
+  .save-bar.hidden { display: none; }
+
+  .save-top {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
   }
 
   #palette-name {
     flex: 1;
-    max-width: 360px;
     background: var(--bg-3);
     border: 1px solid var(--border);
     border-radius: 8px;
@@ -774,16 +834,81 @@ if (!session) return Astro.redirect("/login");
     font-size: 0.95rem;
     transition: border-color 0.15s;
   }
-  #palette-name::placeholder {
+  #palette-name::placeholder { color: var(--text-3); }
+  #palette-name:focus { outline: none; border-color: var(--accent); }
+  #palette-name.shake { animation: shake 0.35s ease; }
+
+  .save-tags {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.75rem;
+  }
+  .tags-label {
+    font-size: 0.72rem;
+    font-weight: 600;
     color: var(--text-3);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    padding-top: 0.55rem;
+    white-space: nowrap;
   }
-  #palette-name:focus {
+  .tags-box {
+    flex: 1;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.35rem;
+    align-items: center;
+    padding: 0.4rem 0.6rem;
+    background: var(--bg-3);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    cursor: text;
+    transition: border-color 0.15s;
+    min-height: 38px;
+  }
+  .tags-box:focus-within { border-color: var(--accent); }
+  .tag-input {
+    border: none;
+    background: transparent;
     outline: none;
-    border-color: var(--accent);
+    font-family: var(--font-display);
+    font-size: 0.82rem;
+    color: var(--text);
+    min-width: 180px;
+    flex: 1;
+    padding: 0.15rem 0;
   }
-  #palette-name.shake {
-    animation: shake 0.35s ease;
+  .tag-input::placeholder { color: var(--text-3); }
+
+  /* Chips — creados por JS → :global() */
+  :global(.tag-chip) {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    padding: 0.2rem 0.55rem 0.2rem 0.65rem;
+    background: var(--bg);
+    border: 1px solid var(--border-2);
+    border-radius: 20px;
+    font-size: 0.75rem;
+    font-family: var(--font-display);
+    font-weight: 500;
+    color: var(--text);
+    white-space: nowrap;
+    line-height: 1.4;
   }
+  :global(.tag-chip-remove) {
+    background: none;
+    border: none;
+    cursor: pointer;
+    color: var(--text-3);
+    font-size: 0.9rem;
+    line-height: 1;
+    padding: 0;
+    display: flex;
+    align-items: center;
+    transition: color 0.12s;
+  }
+  :global(.tag-chip-remove:hover) { color: var(--danger); }
 
   .btn-save {
     display: flex;

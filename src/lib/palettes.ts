@@ -13,6 +13,7 @@ export interface Palette {
   user_id: string;
   name: string;
   created_at: string;
+  tags: string[];
   colors?: Color[];
 }
 
@@ -45,12 +46,13 @@ export async function getPaletteById(id: string): Promise<Palette | null> {
 export async function createPalette(
   userId: string,
   name: string,
-  colors: { hex: string; name: string | null; position: number }[]
+  colors: { hex: string; name: string | null; position: number }[],
+  tags: string[] = []
 ): Promise<Palette> {
   // 1. Crear la paleta
   const { data: palette, error: paletteError } = await supabase
     .from('palettes')
-    .insert({ user_id: userId, name })
+    .insert({ user_id: userId, name, tags })
     .select()
     .single();
 
@@ -87,6 +89,18 @@ export async function getAllPalettes(): Promise<Palette[]> {
 
   if (error) throw error;
   return data ?? [];
+}
+
+export async function updatePaletteTags(
+  paletteId: string,
+  tags: string[]
+): Promise<void> {
+  const { error } = await supabase
+    .from('palettes')
+    .update({ tags })
+    .eq('id', paletteId);
+
+  if (error) throw error;
 }
 
 export async function updateColor(

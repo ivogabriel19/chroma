@@ -24,10 +24,14 @@ const palettesData = allPalettes.map(p => ({
   id: p.id,
   name: p.name,
   creator: p.user_id.substring(0, 8),
+  tags: p.tags ?? [],
   colors: (p.colors ?? [])
     .sort((a, b) => a.position - b.position)
     .map(c => ({ hex: c.hex, name: c.name ?? '' })),
 }));
+
+// Tags únicos para el filtro (orden alfabético)
+const allTags = [...new Set(allPalettes.flatMap(p => p.tags ?? []))].sort();
 ---
 
 <BaseLayout title="Catálogo — Paletta">
@@ -61,19 +65,47 @@ const palettesData = allPalettes.map(p => ({
         <p class="subtitle">{allPalettes.length} paleta{allPalettes.length !== 1 ? 's' : ''} de la comunidad</p>
       </div>
 
+      <!-- Barra de búsqueda -->
+      <div class="search-bar">
+        <svg class="search-icon" width="16" height="16" viewBox="0 0 24 24" fill="none">
+          <circle cx="11" cy="11" r="8" stroke="currentColor" stroke-width="2"/>
+          <path d="m21 21-4.35-4.35" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+        </svg>
+        <input
+          id="search-input"
+          type="text"
+          class="search-input"
+          placeholder="Buscar paletas por nombre o etiqueta…"
+          autocomplete="off"
+        />
+        <button id="search-clear" class="search-clear hidden" aria-label="Limpiar búsqueda">×</button>
+      </div>
+
+      {allTags.length > 0 && (
+        <div class="filter-bar" id="filter-bar">
+          <span class="filter-label">Etiquetas</span>
+          {allTags.map(tag => (
+            <button class="filter-chip" data-tag={tag}>{tag}</button>
+          ))}
+          <button class="filter-clear hidden" id="filter-clear">Limpiar</button>
+        </div>
+      )}
+
       {allPalettes.length === 0 ? (
         <div class="empty-state">
           <span class="empty-icon">◈</span>
           <p>Todavía no hay paletas públicas.</p>
         </div>
       ) : (
-        <div class="palette-grid">
+        <div class="palette-grid" id="palette-grid">
           {allPalettes.map(p => {
             const colors = (p.colors ?? []).sort((a, b) => a.position - b.position);
+            const tags = p.tags ?? [];
             return (
               <button
                 class="palette-card"
                 data-palette-id={p.id}
+                data-tags={JSON.stringify(tags)}
                 aria-label={`Ver paleta ${p.name}`}
               >
                 <div class="card-strip">
@@ -85,6 +117,13 @@ const palettesData = allPalettes.map(p => ({
                   <span class="card-name">{p.name}</span>
                   <span class="card-creator">@{p.user_id.substring(0, 8)}</span>
                 </div>
+                {tags.length > 0 && (
+                  <div class="card-tags">
+                    {tags.map(tag => (
+                      <span class="card-tag">{tag}</span>
+                    ))}
+                  </div>
+                )}
               </button>
             );
           })}
@@ -103,6 +142,7 @@ const palettesData = allPalettes.map(p => ({
           <div class="modal-meta">
             <h2 id="modal-name" class="modal-name"></h2>
             <span id="modal-creator" class="modal-creator"></span>
+            <div id="modal-tags" class="modal-tags"></div>
           </div>
 
           <div id="modal-colors" class="modal-colors"></div>
@@ -131,9 +171,9 @@ const palettesData = allPalettes.map(p => ({
 
 <script define:vars={{ palettesData, isLoggedIn }}>
   const backdrop = document.getElementById('modal-backdrop');
-  const modal = document.getElementById('modal');
   const modalName = document.getElementById('modal-name');
   const modalCreator = document.getElementById('modal-creator');
+  const modalTagsEl = document.getElementById('modal-tags');
   const modalStrip = document.getElementById('modal-strip');
   const modalColors = document.getElementById('modal-colors');
   const modalCopyBtn = document.getElementById('modal-copy-btn');
@@ -143,6 +183,82 @@ const palettesData = allPalettes.map(p => ({
   const palettesMap = new Map(palettesData.map(p => [p.id, p]));
 
   let activePaletteId = null;
+
+  // ── Búsqueda y filtro ─────────────────────────────────────
+  const activeTags = new Set();
+  let searchQuery = '';
+
+  const filterChips = document.querySelectorAll('.filter-chip');
+  const filterClear = document.getElementById('filter-clear');
+  const cards = document.querySelectorAll('.palette-card');
+  const searchInput = document.getElementById('search-input');
+  const searchClear = document.getElementById('search-clear');
+
+  function applyFilter() {
+    const q = searchQuery.toLowerCase().trim();
+
+    cards.forEach(card => {
+      const p = palettesMap.get(card.dataset.paletteId);
+      if (!p) return;
+
+      // Filtro por texto: nombre o cualquier etiqueta
+      const matchesText = q === ''
+        || p.name.toLowerCase().includes(q)
+        || (p.tags ?? []).some(t => t.toLowerCase().includes(q));
+
+      // Filtro por chips activos (OR: basta con que tenga una)
+      const matchesTags = activeTags.size === 0
+        || [...activeTags].some(t => (p.tags ?? []).includes(t));
+
+      card.style.display = matchesText && matchesTags ? '' : 'none';
+    });
+
+    if (filterClear) {
+      filterClear.classList.toggle('hidden', activeTags.size === 0);
+    }
+    if (searchClear) {
+      searchClear.classList.toggle('hidden', searchQuery === '');
+    }
+  }
+
+  // Búsqueda por texto
+  if (searchInput) {
+    searchInput.addEventListener('input', () => {
+      searchQuery = searchInput.value;
+      applyFilter();
+    });
+  }
+
+  if (searchClear) {
+    searchClear.addEventListener('click', () => {
+      searchQuery = '';
+      searchInput.value = '';
+      applyFilter();
+    });
+  }
+
+  // Chips de etiquetas
+  filterChips.forEach(chip => {
+    chip.addEventListener('click', () => {
+      const tag = chip.dataset.tag;
+      if (activeTags.has(tag)) {
+        activeTags.delete(tag);
+        chip.classList.remove('active');
+      } else {
+        activeTags.add(tag);
+        chip.classList.add('active');
+      }
+      applyFilter();
+    });
+  });
+
+  if (filterClear) {
+    filterClear.addEventListener('click', () => {
+      activeTags.clear();
+      filterChips.forEach(c => c.classList.remove('active'));
+      applyFilter();
+    });
+  }
 
   const CLIPBOARD_SVG = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none"><rect x="9" y="9" width="13" height="13" rx="2" stroke="currentColor" stroke-width="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1" stroke="currentColor" stroke-width="2"/></svg>`;
   const CHECK_SVG    = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none"><polyline points="20 6 9 17 4 12" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
@@ -161,9 +277,20 @@ const palettesData = allPalettes.map(p => ({
 
     activePaletteId = id;
 
-    // Nombre y creador
+    // Nombre, creador y tags
     modalName.textContent = p.name;
     modalCreator.textContent = '@' + p.creator;
+
+    // Tags del modal
+    if (modalTagsEl) {
+      modalTagsEl.innerHTML = '';
+      (p.tags ?? []).forEach(tag => {
+        const chip = document.createElement('span');
+        chip.className = 'modal-tag-chip';
+        chip.textContent = tag;
+        modalTagsEl.appendChild(chip);
+      });
+    }
 
     // Franja de colores (con hex label al hover)
     modalStrip.innerHTML = '';
@@ -443,6 +570,123 @@ const palettesData = allPalettes.map(p => ({
     font-family: var(--font-mono);
   }
 
+  /* ── Search bar ── */
+  .search-bar {
+    position: relative;
+    display: flex;
+    align-items: center;
+    margin-bottom: 1rem;
+  }
+  .search-icon {
+    position: absolute;
+    left: 0.9rem;
+    color: var(--text-3);
+    pointer-events: none;
+    flex-shrink: 0;
+  }
+  .search-input {
+    width: 100%;
+    padding: 0.65rem 2.5rem 0.65rem 2.5rem;
+    font-family: var(--font-display);
+    font-size: 0.9rem;
+    background: var(--bg-2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    color: var(--text);
+    outline: none;
+    transition: border-color 0.15s, box-shadow 0.15s;
+  }
+  .search-input::placeholder { color: var(--text-3); }
+  .search-input:focus {
+    border-color: var(--accent-2);
+    box-shadow: 0 0 0 3px rgba(var(--accent-2-rgb, 120,120,200), 0.12);
+  }
+  .search-clear {
+    position: absolute;
+    right: 0.75rem;
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    background: var(--bg-3);
+    border: 1px solid var(--border-2);
+    color: var(--text-3);
+    font-size: 1rem;
+    line-height: 1;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: color 0.15s, border-color 0.15s;
+  }
+  .search-clear:hover { color: var(--danger); border-color: var(--danger); }
+  .search-clear.hidden { display: none; }
+
+  /* ── Filter bar ── */
+  .filter-bar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.5rem;
+    margin-bottom: 1.5rem;
+  }
+  .filter-label {
+    font-size: 0.78rem;
+    font-weight: 600;
+    color: var(--text-3);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    margin-right: 0.25rem;
+  }
+  .filter-chip {
+    padding: 0.3rem 0.75rem;
+    font-family: var(--font-display);
+    font-size: 0.78rem;
+    font-weight: 600;
+    border: 1px solid var(--border-2);
+    border-radius: 999px;
+    background: var(--bg-2);
+    color: var(--text-2);
+    cursor: pointer;
+    transition: background 0.15s, border-color 0.15s, color 0.15s;
+  }
+  .filter-chip:hover { border-color: var(--accent-2); color: var(--accent-2); }
+  .filter-chip.active {
+    background: var(--accent-2);
+    border-color: var(--accent-2);
+    color: #fff;
+  }
+  .filter-clear {
+    padding: 0.3rem 0.75rem;
+    font-family: var(--font-display);
+    font-size: 0.78rem;
+    font-weight: 600;
+    border: 1px solid var(--border-2);
+    border-radius: 999px;
+    background: transparent;
+    color: var(--text-3);
+    cursor: pointer;
+    transition: color 0.15s, border-color 0.15s;
+  }
+  .filter-clear:hover { color: var(--danger); border-color: var(--danger); }
+  .filter-clear.hidden { display: none; }
+
+  /* ── Card tags ── */
+  .card-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.3rem;
+    padding: 0 1rem 0.75rem;
+  }
+  .card-tag {
+    padding: 0.2rem 0.55rem;
+    font-size: 0.7rem;
+    font-weight: 600;
+    border-radius: 999px;
+    background: var(--bg-3);
+    color: var(--text-3);
+    border: 1px solid var(--border);
+  }
+
   /* ── Empty ── */
   .empty-state {
     display: flex;
@@ -574,6 +818,22 @@ const palettesData = allPalettes.map(p => ({
     font-size: 0.78rem;
     color: var(--text-3);
     font-family: var(--font-mono);
+  }
+  /* Tags del modal: contenedor SSR, chips JS-created */
+  .modal-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.35rem;
+    margin-top: 0.35rem;
+  }
+  :global(.modal-tag-chip) {
+    padding: 0.25rem 0.65rem;
+    font-size: 0.74rem;
+    font-weight: 600;
+    border-radius: 999px;
+    background: var(--bg-3);
+    color: var(--text-2);
+    border: 1px solid var(--border-2);
   }
 
   /* Lista de colores — contenedor estático */

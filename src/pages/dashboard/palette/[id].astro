@@ -39,6 +39,28 @@ const colors = (palette.colors ?? []).sort((a, b) => a.position - b.position);
       </div>
     </div>
 
+    <!-- Etiquetas -->
+    <div class="tags-section">
+      <div id="tags-view" class="tags-view">
+        {(palette.tags ?? []).map(tag => (
+          <span class="tag-chip">{tag}</span>
+        ))}
+        <button id="edit-tags-btn" class="btn-edit-tags">
+          {(palette.tags ?? []).length === 0 ? '+ Agregar etiquetas' : 'Editar'}
+        </button>
+      </div>
+      <div id="tags-editor" class="tags-editor hidden">
+        <div id="tags-edit-box" class="tags-box">
+          <input type="text" id="tag-edit-input" class="tag-input"
+                 placeholder="Agregar etiqueta y presioná Enter…" maxlength="30" />
+        </div>
+        <div class="tags-editor-actions">
+          <button id="save-tags-btn" class="btn-save-tags">Guardar</button>
+          <button id="cancel-tags-btn" class="btn-cancel-tags">Cancelar</button>
+        </div>
+      </div>
+    </div>
+
     <!-- Vista pantalla completa estilo Coolors -->
     <div class="fullscreen-palette">
       {colors.map(c => (
@@ -192,6 +214,98 @@ const colors = (palette.colors ?? []).sort((a, b) => a.position - b.position);
         variantsStrip.appendChild(btn);
       });
     });
+  });
+
+  // ── Etiquetas ──────────────────────────────────────────
+  const paletteId = document.querySelector<HTMLElement>('.color-row')?.dataset.paletteId ?? '';
+  const tagsView       = document.getElementById('tags-view')!;
+  const tagsEditor     = document.getElementById('tags-editor')!;
+  const tagsEditBox    = document.getElementById('tags-edit-box')!;
+  const tagEditInput   = document.getElementById('tag-edit-input') as HTMLInputElement;
+  const editTagsBtn    = document.getElementById('edit-tags-btn')!;
+  const saveTagsBtn    = document.getElementById('save-tags-btn')!;
+  const cancelTagsBtn  = document.getElementById('cancel-tags-btn')!;
+
+  let editTags: string[] = Array.from(
+    tagsView.querySelectorAll<HTMLElement>('.tag-chip')
+  ).map(el => el.firstChild!.textContent!.trim());
+
+  function renderEditChips() {
+    tagsEditBox.querySelectorAll('.tag-chip').forEach(el => el.remove());
+    editTags.forEach(tag => {
+      const chip = document.createElement('span');
+      chip.className = 'tag-chip';
+      chip.textContent = tag;
+      const rm = document.createElement('button');
+      rm.className = 'tag-chip-remove';
+      rm.type = 'button';
+      rm.textContent = '×';
+      rm.addEventListener('click', () => {
+        editTags = editTags.filter(t => t !== tag);
+        renderEditChips();
+      });
+      chip.appendChild(rm);
+      tagsEditBox.insertBefore(chip, tagEditInput);
+    });
+  }
+
+  tagEditInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' || e.key === ',') {
+      e.preventDefault();
+      const val = tagEditInput.value.trim().replace(/,/g, '');
+      if (val && !editTags.includes(val) && editTags.length < 8) {
+        editTags.push(val);
+        renderEditChips();
+      }
+      tagEditInput.value = '';
+    } else if (e.key === 'Backspace' && tagEditInput.value === '' && editTags.length) {
+      editTags.pop();
+      renderEditChips();
+    }
+  });
+  tagsEditBox.addEventListener('click', () => tagEditInput.focus());
+
+  editTagsBtn.addEventListener('click', () => {
+    renderEditChips();
+    tagsView.classList.add('hidden');
+    tagsEditor.classList.remove('hidden');
+    tagEditInput.focus();
+  });
+
+  cancelTagsBtn.addEventListener('click', () => {
+    tagsEditor.classList.add('hidden');
+    tagsView.classList.remove('hidden');
+  });
+
+  saveTagsBtn.addEventListener('click', async () => {
+    saveTagsBtn.disabled = true;
+    saveTagsBtn.textContent = 'Guardando…';
+
+    const res = await fetch('/api/palettes/update-tags', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ paletteId, tags: editTags }),
+    });
+
+    if (res.ok) {
+      // Actualizar la vista con los nuevos chips
+      tagsView.querySelectorAll('.tag-chip').forEach(el => el.remove());
+      editTags.forEach(tag => {
+        const chip = document.createElement('span');
+        chip.className = 'tag-chip';
+        chip.textContent = tag;
+        tagsView.insertBefore(chip, editTagsBtn);
+      });
+      editTagsBtn.textContent = editTags.length === 0 ? '+ Agregar etiquetas' : 'Editar';
+      tagsEditor.classList.add('hidden');
+      tagsView.classList.remove('hidden');
+    } else {
+      saveTagsBtn.textContent = 'Error — reintentar';
+    }
+    saveTagsBtn.disabled = false;
+    if (saveTagsBtn.textContent !== 'Error — reintentar') {
+      saveTagsBtn.textContent = 'Guardar';
+    }
   });
 </script>
 
@@ -392,6 +506,123 @@ const colors = (palette.colors ?? []).sort((a, b) => a.position - b.position);
     margin-top: -0.25rem; /* compensa el gap del row para que quede pegado */
   }
   .variants-strip.hidden { display: none; }
+
+  /* ── Tags ── */
+  .tags-section { display: flex; flex-direction: column; gap: 0.5rem; }
+
+  .tags-view {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.4rem;
+    min-height: 32px;
+  }
+  .tags-view.hidden { display: none; }
+
+  /* Chips de la vista (SSR + JS post-guardar) → :global() */
+  :global(.tag-chip) {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    padding: 0.22rem 0.65rem;
+    background: var(--bg-3);
+    border: 1px solid var(--border-2);
+    border-radius: 20px;
+    font-size: 0.75rem;
+    font-family: var(--font-display);
+    font-weight: 500;
+    color: var(--text);
+    white-space: nowrap;
+    line-height: 1.4;
+  }
+  :global(.tag-chip-remove) {
+    background: none;
+    border: none;
+    cursor: pointer;
+    color: var(--text-3);
+    font-size: 0.88rem;
+    line-height: 1;
+    padding: 0;
+    display: flex;
+    align-items: center;
+    transition: color 0.12s;
+  }
+  :global(.tag-chip-remove:hover) { color: var(--danger); }
+
+  .btn-edit-tags {
+    background: none;
+    border: 1px dashed var(--border-2);
+    border-radius: 20px;
+    padding: 0.22rem 0.65rem;
+    font-size: 0.75rem;
+    font-family: var(--font-display);
+    color: var(--text-3);
+    cursor: pointer;
+    transition: border-color 0.15s, color 0.15s;
+    line-height: 1.4;
+  }
+  .btn-edit-tags:hover { border-color: var(--accent); color: var(--text); }
+
+  .tags-editor { display: flex; align-items: flex-start; gap: 0.75rem; }
+  .tags-editor.hidden { display: none; }
+
+  .tags-box {
+    flex: 1;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.35rem;
+    align-items: center;
+    padding: 0.4rem 0.6rem;
+    background: var(--bg-3);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    cursor: text;
+    transition: border-color 0.15s;
+    min-height: 38px;
+  }
+  .tags-box:focus-within { border-color: var(--accent); }
+  .tag-input {
+    border: none;
+    background: transparent;
+    outline: none;
+    font-family: var(--font-display);
+    font-size: 0.82rem;
+    color: var(--text);
+    min-width: 150px;
+    flex: 1;
+    padding: 0.15rem 0;
+  }
+  .tag-input::placeholder { color: var(--text-3); }
+
+  .tags-editor-actions { display: flex; gap: 0.5rem; align-items: center; padding-top: 0.2rem; }
+  .btn-save-tags {
+    padding: 0.45rem 0.9rem;
+    background: var(--accent);
+    color: #0e0e11;
+    border: none;
+    border-radius: 7px;
+    font-family: var(--font-display);
+    font-weight: 700;
+    font-size: 0.8rem;
+    cursor: pointer;
+    transition: background 0.15s;
+    white-space: nowrap;
+  }
+  .btn-save-tags:hover:not(:disabled) { background: var(--accent-dim); }
+  .btn-save-tags:disabled { opacity: 0.6; cursor: not-allowed; }
+  .btn-cancel-tags {
+    background: none;
+    border: 1px solid var(--border);
+    border-radius: 7px;
+    padding: 0.45rem 0.9rem;
+    font-family: var(--font-display);
+    font-size: 0.8rem;
+    color: var(--text-2);
+    cursor: pointer;
+    transition: border-color 0.15s;
+    white-space: nowrap;
+  }
+  .btn-cancel-tags:hover { border-color: var(--border-2); }
 
   /* Los swatches se crean con JS → necesitan :global() */
   :global(.variant-swatch) {

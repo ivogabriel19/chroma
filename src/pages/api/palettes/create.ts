@@ -10,14 +10,18 @@ export const POST: APIRoute = async ({ request, redirect, cookies }) => {
   if (!session) return redirect('/login');
 
   const body = await request.json();
-  const { name, colors } = body;
+  const { name, colors, tags } = body;
 
   if (!name || !Array.isArray(colors)) {
     return new Response('Datos inválidos', { status: 400 });
   }
 
+  const cleanTags = Array.isArray(tags)
+    ? tags.filter((t: unknown) => typeof t === 'string' && t.trim()).map((t: string) => t.trim()).slice(0, 8)
+    : [];
+
   try {
-    const palette = await createPalette(session.user.id, name, colors);
+    const palette = await createPalette(session.user.id, name, colors, cleanTags);
     return new Response(JSON.stringify(palette), {
       status: 201,
       headers: { 'Content-Type': 'application/json' },
