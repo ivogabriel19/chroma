@@ -81,6 +81,9 @@ if (!session) return Astro.redirect("/login");
       </div>
     </div>
 
+    <!-- Variantes de color -->
+    <div id="variant-panel" class="variant-panel hidden"></div>
+
     <!-- Guardar -->
     <div id="save-bar" class="save-bar hidden">
       <input
@@ -109,7 +112,7 @@ if (!session) return Astro.redirect("/login");
 </AppLayout>
 
 <script>
-  import { generatePalette, enrichWithNames, getColorName } from "../../lib/colors";
+  import { generatePalette, enrichWithNames, getColorName, hexToHsl, hslToHex } from "../../lib/colors";
   import type { GeneratedColor, HarmonyType } from "../../lib/colors";
 
   let currentColors: GeneratedColor[] = [];
@@ -130,6 +133,7 @@ if (!session) return Astro.redirect("/login");
   const saveBar = document.getElementById("save-bar")!;
   const nameInput = document.getElementById("palette-name") as HTMLInputElement;
   const btnSave = document.getElementById("btn-save")!;
+  const variantPanel = document.getElementById("variant-panel")!;
 
   // Sync color picker ↔ text
   pickerEl.addEventListener("input", () => {
@@ -176,6 +180,7 @@ if (!session) return Astro.redirect("/login");
 
   function renderPalette() {
     paletteView.innerHTML = "";
+    variantPanel.classList.add("hidden");
 
     const strip = document.createElement("div");
     strip.className = "color-strip";
@@ -247,6 +252,11 @@ if (!session) return Astro.redirect("/login");
         picker.click();
       });
 
+      col.addEventListener("click", (e) => {
+        if ((e.target as HTMLElement).closest(".btn-copy-col, .btn-edit-col, .col-picker")) return;
+        showVariants(i);
+      });
+
       overlay.appendChild(nameDisplay);
       overlay.appendChild(hexDisplay);
       overlay.appendChild(copyBtn);
@@ -268,6 +278,83 @@ if (!session) return Astro.redirect("/login");
         setTimeout(() => (span.textContent = "Copiar"), 1500);
       });
     });
+  }
+
+  const VARIANT_LIGHTNESSES = [10, 20, 30, 40, 50, 60, 70, 80, 90];
+
+  function showVariants(index: number) {
+    const c = currentColors[index];
+    const hsl = hexToHsl(c.hex);
+    const closestL = VARIANT_LIGHTNESSES.reduce((a, b) =>
+      Math.abs(a - hsl.l) <= Math.abs(b - hsl.l) ? a : b
+    );
+
+    variantPanel.innerHTML = "";
+    variantPanel.classList.remove("hidden");
+
+    const header = document.createElement("div");
+    header.className = "variant-header";
+
+    const label = document.createElement("span");
+    label.className = "variant-label";
+    label.textContent = `Variantes · ${c.hex.toUpperCase()}`;
+
+    const closeBtn = document.createElement("button");
+    closeBtn.className = "variant-close";
+    closeBtn.textContent = "×";
+    closeBtn.addEventListener("click", () => variantPanel.classList.add("hidden"));
+
+    header.appendChild(label);
+    header.appendChild(closeBtn);
+    variantPanel.appendChild(header);
+
+    const swatches = document.createElement("div");
+    swatches.className = "variant-swatches";
+
+    VARIANT_LIGHTNESSES.forEach((l) => {
+      const hex = hslToHex({ h: hsl.h, s: hsl.s, l });
+      const btn = document.createElement("button");
+      btn.className = "variant-swatch" + (l === closestL ? " active" : "");
+      btn.style.background = hex;
+      btn.title = hex.toUpperCase();
+
+      btn.addEventListener("click", async () => {
+        swatches.querySelectorAll(".variant-swatch").forEach((s) => s.classList.remove("active"));
+        btn.classList.add("active");
+        label.textContent = `Variantes · ${hex.toUpperCase()}`;
+        await applyVariant(index, hex);
+      });
+
+      swatches.appendChild(btn);
+    });
+
+    variantPanel.appendChild(swatches);
+  }
+
+  async function applyVariant(index: number, hex: string) {
+    const strip = document.querySelector(".color-strip");
+    if (!strip) return;
+    const col = strip.querySelectorAll(".color-col")[index] as HTMLElement | undefined;
+    if (!col) return;
+
+    currentColors[index] = { ...currentColors[index], hex, name: null };
+    col.style.background = hex;
+
+    const hexDisplay = col.querySelector(".color-hex-display");
+    if (hexDisplay) hexDisplay.textContent = hex.toUpperCase();
+
+    const copyBtn = col.querySelector<HTMLElement>(".btn-copy-col");
+    if (copyBtn) copyBtn.dataset.hex = hex;
+
+    const picker = col.querySelector<HTMLInputElement>(".col-picker");
+    if (picker) picker.value = hex;
+
+    const nameDisplay = col.querySelector(".color-name-display");
+    if (nameDisplay) nameDisplay.textContent = "…";
+
+    const name = await getColorName(hex).catch(() => "");
+    currentColors[index].name = name;
+    if (nameDisplay) nameDisplay.textContent = name;
   }
 
   btnRandom.addEventListener("click", () => generate(true));
@@ -601,6 +688,64 @@ if (!session) return Astro.redirect("/login");
     width: fit-content;
   }
   :global(.btn-edit-col:hover) { background: rgba(255,255,255,0.25); }
+
+  /* ── Variant panel ── */
+  /* .variant-panel está en el HTML estático → scope de Astro funciona */
+  .variant-panel {
+    padding: 1rem 1.5rem;
+    background: var(--bg-2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    animation: fadeUp 0.2s ease;
+  }
+  .variant-panel.hidden { display: none; }
+
+  /* Los hijos se crean con JS → necesitan :global() para recibir estilos */
+  :global(.variant-header) {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 0.85rem;
+  }
+  :global(.variant-label) {
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: var(--text-3);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    font-family: var(--font-mono);
+  }
+  :global(.variant-close) {
+    background: none;
+    border: none;
+    color: var(--text-3);
+    cursor: pointer;
+    font-size: 1.25rem;
+    line-height: 1;
+    padding: 0 0.25rem;
+    transition: color 0.15s;
+  }
+  :global(.variant-close:hover) { color: var(--text); }
+
+  :global(.variant-swatches) {
+    display: flex;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+  }
+  :global(.variant-swatch) {
+    width: 52px;
+    height: 52px;
+    border-radius: 10px;
+    border: 2px solid transparent;
+    cursor: pointer;
+    transition: transform 0.15s, box-shadow 0.15s;
+    flex-shrink: 0;
+  }
+  :global(.variant-swatch:hover) { transform: translateY(-4px); }
+  :global(.variant-swatch.active) {
+    border-color: white;
+    box-shadow: 0 0 0 2px var(--accent);
+  }
 
   /* ── Save bar ── */
   .save-bar {

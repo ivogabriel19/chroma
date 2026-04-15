@@ -62,7 +62,7 @@ const colors = (palette.colors ?? []).sort((a, b) => a.position - b.position);
     <div class="colors-list">
       {colors.map(c => (
         <div class="color-row" data-color-id={c.id} data-palette-id={palette.id}>
-          <div class="color-dot" style={`background:${c.hex}`} />
+          <div class="color-dot" style={`background:${c.hex}`} data-hex={c.hex} title="Ver variantes" />
           <div class="color-details">
             <span class="hex-tag">{c.hex.toUpperCase()}</span>
             <span class="name-tag">{c.name ?? ''}</span>
@@ -75,6 +75,7 @@ const colors = (palette.colors ?? []).sort((a, b) => a.position - b.position);
           </button>
           <input type="color" class="color-edit-picker" value={c.hex} />
           <button class="btn-copy-small" data-hex={c.hex}>Copiar HEX</button>
+          <div class="variants-strip hidden"></div>
         </div>
       ))}
     </div>
@@ -82,7 +83,7 @@ const colors = (palette.colors ?? []).sort((a, b) => a.position - b.position);
 </AppLayout>
 
 <script>
-  import { getColorName } from '../../../lib/colors';
+  import { getColorName, hexToHsl, hslToHex } from '../../../lib/colors';
 
   // Botones de copiar
   document.querySelectorAll('[data-hex]').forEach(el => {
@@ -127,12 +128,13 @@ const colors = (palette.colors ?? []).sort((a, b) => a.position - b.position);
       if (fullCol) fullCol.style.background = hex;
     });
 
-    // Commit al cerrar el picker
-    picker.addEventListener('change', async () => {
-      const hex = picker.value;
+    // Función compartida: aplicar un nuevo hex y persistir
+    async function applyNewColor(hex: string) {
       dot.style.background = hex;
+      dot.dataset.hex = hex;
       hexTag.textContent = hex.toUpperCase();
       copyBtn.dataset.hex = hex;
+      picker.value = hex;
       if (fullCol) fullCol.style.background = hex;
       if (fullHexDisplay) fullHexDisplay.textContent = hex.toUpperCase();
       if (fullCopyBtn) fullCopyBtn.dataset.hex = hex;
@@ -147,6 +149,48 @@ const colors = (palette.colors ?? []).sort((a, b) => a.position - b.position);
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ colorId, paletteId, hex, name }),
       }).catch(() => {});
+    }
+
+    // Commit al cerrar el picker libre
+    picker.addEventListener('change', () => applyNewColor(picker.value));
+
+    // Variantes: click en el dot
+    const variantsStrip = row.querySelector<HTMLElement>('.variants-strip')!;
+    const VARIANT_LIGHTNESSES = [10, 20, 30, 40, 50, 60, 70, 80, 90];
+
+    dot.addEventListener('click', () => {
+      if (!variantsStrip.classList.contains('hidden')) {
+        variantsStrip.classList.add('hidden');
+        return;
+      }
+
+      const currentHex = hexTag.textContent?.trim() ?? '#000000';
+      const hsl = hexToHsl(currentHex);
+      const closestL = VARIANT_LIGHTNESSES.reduce((a, b) =>
+        Math.abs(a - hsl.l) <= Math.abs(b - hsl.l) ? a : b
+      );
+
+      variantsStrip.innerHTML = '';
+      variantsStrip.classList.remove('hidden');
+
+      VARIANT_LIGHTNESSES.forEach(l => {
+        const hex = hslToHex({ h: hsl.h, s: hsl.s, l });
+        const btn = document.createElement('button');
+        btn.className = 'variant-swatch' + (l === closestL ? ' active' : '');
+        btn.style.background = hex;
+        btn.title = hex.toUpperCase();
+
+        btn.addEventListener('click', async () => {
+          variantsStrip.querySelectorAll('.variant-swatch').forEach(s => s.classList.remove('active'));
+          btn.classList.add('active');
+          await applyNewColor(hex);
+          // Re-calcular closest para reflejar el nuevo color seleccionado
+          variantsStrip.querySelectorAll('.variant-swatch').forEach(s => s.classList.remove('active'));
+          btn.classList.add('active');
+        });
+
+        variantsStrip.appendChild(btn);
+      });
     });
   });
 </script>
@@ -257,6 +301,7 @@ const colors = (palette.colors ?? []).sort((a, b) => a.position - b.position);
   .color-row {
     display: flex;
     align-items: center;
+    flex-wrap: wrap;
     gap: 1rem;
     padding: 0.75rem 1rem;
     background: var(--bg-2);
@@ -273,6 +318,12 @@ const colors = (palette.colors ?? []).sort((a, b) => a.position - b.position);
     border-radius: 8px;
     flex-shrink: 0;
     border: 1px solid rgba(255,255,255,0.05);
+    cursor: pointer;
+    transition: transform 0.15s, box-shadow 0.15s;
+  }
+  .color-dot:hover {
+    transform: scale(1.12);
+    box-shadow: 0 2px 8px rgba(0,0,0,0.3);
   }
   .color-details {
     display: flex;
@@ -329,5 +380,32 @@ const colors = (palette.colors ?? []).sort((a, b) => a.position - b.position);
     width: 0;
     height: 0;
     pointer-events: none;
+  }
+
+  .variants-strip {
+    flex-basis: 100%;   /* ocupa toda la línea y fuerza el wrap */
+    display: flex;
+    gap: 0.45rem;
+    flex-wrap: wrap;
+    padding-top: 0.6rem;
+    border-top: 1px solid var(--border);
+    margin-top: -0.25rem; /* compensa el gap del row para que quede pegado */
+  }
+  .variants-strip.hidden { display: none; }
+
+  /* Los swatches se crean con JS → necesitan :global() */
+  :global(.variant-swatch) {
+    width: 34px;
+    height: 34px;
+    border-radius: 7px;
+    border: 2px solid transparent;
+    cursor: pointer;
+    transition: transform 0.15s, box-shadow 0.15s;
+    flex-shrink: 0;
+  }
+  :global(.variant-swatch:hover) { transform: translateY(-3px); }
+  :global(.variant-swatch.active) {
+    border-color: white;
+    box-shadow: 0 0 0 2px var(--accent);
   }
 </style>
