@@ -1,6 +1,6 @@
 ---
 import BaseLayout from '../layouts/BaseLayout.astro';
-import { getSessionFromCookies } from '../lib/supabase';
+import { getSessionFromCookies, supabasePublic } from '../lib/supabase';
 import { getAllPalettes } from '../lib/palettes';
 
 import { Image } from 'astro:assets';
@@ -22,11 +22,26 @@ try {
   allPalettes = await getAllPalettes();
 } catch {}
 
+// Resolver usernames de los creadores
+const creatorIds = [...new Set(allPalettes.map(p => p.user_id))];
+const usernameMap = new Map<string, string>();
+if (creatorIds.length > 0) {
+  const { data: profiles } = await supabasePublic
+    .from('user_profiles')
+    .select('id, username')
+    .in('id', creatorIds);
+  (profiles ?? []).forEach((p: { id: string; username: string }) => {
+    usernameMap.set(p.id, p.username);
+  });
+}
+
+const getCreator = (userId: string) => usernameMap.get(userId) ?? userId.substring(0, 8);
+
 // Serializar datos para el cliente
 const palettesData = allPalettes.map(p => ({
   id: p.id,
   name: p.name,
-  creator: p.user_id.substring(0, 8),
+  creator: getCreator(p.user_id),
   tags: p.tags ?? [],
   colors: (p.colors ?? [])
     .sort((a, b) => a.position - b.position)
@@ -120,7 +135,7 @@ const allTags = [...new Set(allPalettes.flatMap(p => p.tags ?? []))].sort();
                 </div>
                 <div class="card-info">
                   <span class="card-name">{p.name}</span>
-                  <span class="card-creator">@{p.user_id.substring(0, 8)}</span>
+                  <span class="card-creator">@{getCreator(p.user_id)}</span>
                 </div>
                 {tags.length > 0 && (
                   <div class="card-tags">
