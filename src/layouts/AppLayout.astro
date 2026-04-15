@@ -2,6 +2,9 @@
 import BaseLayout from './BaseLayout.astro';
 import { getSessionFromCookies } from '../lib/supabase';
 
+import { Image } from 'astro:assets';
+import logo from '../assets/logo-256.png';
+
 interface Props {
   title?: string;
 }
@@ -23,8 +26,10 @@ const user = session.user;
   <div class="app-shell">
     <header class="app-header">
       <a href="/dashboard" class="logo">
-        <span class="logo-mark">◈</span>
-        <span class="logo-text">Paletta</span>
+        <span class="logo-mark">
+          <Image src={logo} alt="">
+        </span>
+        <span class="logo-text">Chroma</span>
       </a>
       <nav class="header-nav">
         <a href="/dashboard" class="btn-new">
@@ -80,8 +85,14 @@ const user = session.user;
     font-size: 1.3rem;
     color: var(--accent);
     line-height: 1;
+
+    & > img {
+      height: 2rem;
+      width: 2rem;
+    }
   }
   .logo-text {
+    color: var(--bg);
     font-size: 1.1rem;
     font-weight: 800;
     letter-spacing: -0.03em;
