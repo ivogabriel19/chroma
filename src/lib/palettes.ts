@@ -78,6 +78,17 @@ export async function deletePalette(id: string): Promise<void> {
   // Los colores se eliminan en cascada (ON DELETE CASCADE del schema)
 }
 
+// Nota: requiere política RLS "public read" en la tabla palettes en Supabase
+export async function getAllPalettes(): Promise<Palette[]> {
+  const { data, error } = await supabase
+    .from('palettes')
+    .select('*, colors(*)')
+    .order('created_at', { ascending: false });
+
+  if (error) throw error;
+  return data ?? [];
+}
+
 export async function updateColor(
   colorId: string,
   hex: string,

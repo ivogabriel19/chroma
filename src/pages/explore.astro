@@ -1,0 +1,666 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro';
+import { getSessionFromCookies } from '../lib/supabase';
+import { getAllPalettes } from '../lib/palettes';
+
+const cookieHeader = Astro.request.headers.get('cookie') ?? '';
+const cookieMap = Object.fromEntries(
+  cookieHeader.split(';').map(c => {
+    const [k, ...v] = c.trim().split('=');
+    return [k, v.join('=')];
+  })
+);
+
+const session = await getSessionFromCookies(cookieMap);
+const isLoggedIn = session !== null;
+
+let allPalettes: Awaited<ReturnType<typeof getAllPalettes>> = [];
+try {
+  allPalettes = await getAllPalettes();
+} catch {}
+
+// Serializar datos para el cliente
+const palettesData = allPalettes.map(p => ({
+  id: p.id,
+  name: p.name,
+  creator: p.user_id.substring(0, 8),
+  colors: (p.colors ?? [])
+    .sort((a, b) => a.position - b.position)
+    .map(c => ({ hex: c.hex, name: c.name ?? '' })),
+}));
+---
+
+<BaseLayout title="Catálogo — Paletta">
+  <div class="catalog-shell">
+
+    <!-- Header -->
+    <header class="catalog-header">
+      <a href="/" class="logo">
+        <span class="logo-mark">◈</span>
+        <span class="logo-text">Paletta</span>
+      </a>
+      <nav class="header-nav">
+        {isLoggedIn ? (
+          <>
+            <a href="/dashboard" class="nav-link">Dashboard</a>
+            <span class="user-email">{session!.user.email}</span>
+            <form method="POST" action="/api/auth/logout">
+              <button type="submit" class="btn-logout">Salir</button>
+            </form>
+          </>
+        ) : (
+          <a href="/login" class="btn-login">Iniciar sesión</a>
+        )}
+      </nav>
+    </header>
+
+    <!-- Contenido -->
+    <main class="catalog-main">
+      <div class="catalog-page-header">
+        <h1>Catálogo</h1>
+        <p class="subtitle">{allPalettes.length} paleta{allPalettes.length !== 1 ? 's' : ''} de la comunidad</p>
+      </div>
+
+      {allPalettes.length === 0 ? (
+        <div class="empty-state">
+          <span class="empty-icon">◈</span>
+          <p>Todavía no hay paletas públicas.</p>
+        </div>
+      ) : (
+        <div class="palette-grid">
+          {allPalettes.map(p => {
+            const colors = (p.colors ?? []).sort((a, b) => a.position - b.position);
+            return (
+              <button
+                class="palette-card"
+                data-palette-id={p.id}
+                aria-label={`Ver paleta ${p.name}`}
+              >
+                <div class="card-strip">
+                  {colors.map(c => (
+                    <div class="card-swatch" style={`background:${c.hex}`} />
+                  ))}
+                </div>
+                <div class="card-info">
+                  <span class="card-name">{p.name}</span>
+                  <span class="card-creator">@{p.user_id.substring(0, 8)}</span>
+                </div>
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </main>
+
+    <!-- Modal -->
+    <div id="modal-backdrop" class="modal-backdrop hidden" role="dialog" aria-modal="true">
+      <div class="modal" id="modal">
+        <button id="modal-close" class="modal-close" aria-label="Cerrar">×</button>
+
+        <div id="modal-strip" class="modal-strip"></div>
+
+        <div class="modal-body">
+          <div class="modal-meta">
+            <h2 id="modal-name" class="modal-name"></h2>
+            <span id="modal-creator" class="modal-creator"></span>
+          </div>
+
+          <div id="modal-colors" class="modal-colors"></div>
+
+          <div class="modal-actions">
+            {isLoggedIn ? (
+              <button id="modal-copy-btn" class="btn-copy-palette">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none">
+                  <rect x="9" y="9" width="13" height="13" rx="2" stroke="currentColor" stroke-width="2"/>
+                  <path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1" stroke="currentColor" stroke-width="2"/>
+                </svg>
+                Copiar al dashboard
+              </button>
+            ) : (
+              <a href="/login" class="btn-copy-palette">
+                Iniciá sesión para copiar
+              </a>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</BaseLayout>
+
+<script define:vars={{ palettesData, isLoggedIn }}>
+  const backdrop = document.getElementById('modal-backdrop');
+  const modal = document.getElementById('modal');
+  const modalName = document.getElementById('modal-name');
+  const modalCreator = document.getElementById('modal-creator');
+  const modalStrip = document.getElementById('modal-strip');
+  const modalColors = document.getElementById('modal-colors');
+  const modalCopyBtn = document.getElementById('modal-copy-btn');
+  const modalClose = document.getElementById('modal-close');
+
+  // Indexar por id para acceso rápido
+  const palettesMap = new Map(palettesData.map(p => [p.id, p]));
+
+  let activePaletteId = null;
+
+  const CLIPBOARD_SVG = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none"><rect x="9" y="9" width="13" height="13" rx="2" stroke="currentColor" stroke-width="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1" stroke="currentColor" stroke-width="2"/></svg>`;
+  const CHECK_SVG    = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none"><polyline points="20 6 9 17 4 12" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+
+  // Abrir modal al hacer click en una card
+  document.querySelectorAll('.palette-card').forEach(card => {
+    card.addEventListener('click', () => {
+      const id = card.dataset.paletteId;
+      openModal(id);
+    });
+  });
+
+  function openModal(id) {
+    const p = palettesMap.get(id);
+    if (!p) return;
+
+    activePaletteId = id;
+
+    // Nombre y creador
+    modalName.textContent = p.name;
+    modalCreator.textContent = '@' + p.creator;
+
+    // Franja de colores (con hex label al hover)
+    modalStrip.innerHTML = '';
+    p.colors.forEach(c => {
+      const col = document.createElement('div');
+      col.className = 'modal-strip-col';
+      col.style.background = c.hex;
+
+      const label = document.createElement('span');
+      label.className = 'modal-strip-label';
+      label.textContent = c.hex.toUpperCase();
+      col.appendChild(label);
+
+      modalStrip.appendChild(col);
+    });
+
+    // Lista de colores
+    modalColors.innerHTML = '';
+    p.colors.forEach(c => {
+      const row = document.createElement('div');
+      row.className = 'modal-color-row';
+
+      const dot = document.createElement('div');
+      dot.className = 'modal-color-dot';
+      dot.style.background = c.hex;
+
+      const info = document.createElement('div');
+      info.className = 'modal-color-info';
+
+      const hex = document.createElement('span');
+      hex.className = 'modal-color-hex';
+      hex.textContent = c.hex.toUpperCase();
+
+      const name = document.createElement('span');
+      name.className = 'modal-color-name';
+      name.textContent = c.name;
+
+      info.appendChild(hex);
+      info.appendChild(name);
+
+      const copyHex = document.createElement('button');
+      copyHex.className = 'modal-copy-hex';
+      copyHex.title = 'Copiar HEX';
+      copyHex.innerHTML = CLIPBOARD_SVG;
+      copyHex.addEventListener('click', () => {
+        navigator.clipboard.writeText(c.hex);
+        copyHex.innerHTML = CHECK_SVG;
+        setTimeout(() => { copyHex.innerHTML = CLIPBOARD_SVG; }, 1500);
+      });
+
+      row.appendChild(dot);
+      row.appendChild(info);
+      row.appendChild(copyHex);
+      modalColors.appendChild(row);
+    });
+
+    // Reset botón de copiar
+    if (modalCopyBtn) {
+      modalCopyBtn.textContent = '';
+      modalCopyBtn.innerHTML = `
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none">
+          <rect x="9" y="9" width="13" height="13" rx="2" stroke="currentColor" stroke-width="2"/>
+          <path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1" stroke="currentColor" stroke-width="2"/>
+        </svg>
+        Copiar al dashboard
+      `;
+      modalCopyBtn.disabled = false;
+    }
+
+    backdrop.classList.remove('hidden');
+    document.body.style.overflow = 'hidden';
+  }
+
+  function closeModal() {
+    backdrop.classList.add('hidden');
+    document.body.style.overflow = '';
+    activePaletteId = null;
+  }
+
+  // Cerrar con X
+  modalClose.addEventListener('click', closeModal);
+
+  // Cerrar al hacer click fuera del modal
+  backdrop.addEventListener('click', e => {
+    if (e.target === backdrop) closeModal();
+  });
+
+  // Cerrar con Escape
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape') closeModal();
+  });
+
+  // Copiar paleta al dashboard
+  if (modalCopyBtn) {
+    modalCopyBtn.addEventListener('click', async () => {
+      if (!activePaletteId) return;
+
+      modalCopyBtn.disabled = true;
+      modalCopyBtn.textContent = 'Copiando…';
+
+      try {
+        const res = await fetch('/api/palettes/copy', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ paletteId: activePaletteId }),
+        });
+
+        if (res.ok) {
+          modalCopyBtn.textContent = '✓ Copiada';
+          setTimeout(() => {
+            window.location.href = '/dashboard';
+          }, 800);
+        } else if (res.status === 401) {
+          window.location.href = '/login';
+        } else {
+          modalCopyBtn.textContent = 'Error — reintentar';
+          modalCopyBtn.disabled = false;
+        }
+      } catch {
+        modalCopyBtn.textContent = 'Error — reintentar';
+        modalCopyBtn.disabled = false;
+      }
+    });
+  }
+</script>
+
+<style>
+  /* ── Shell ── */
+  .catalog-shell {
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    background: var(--bg);
+  }
+
+  /* ── Header ── */
+  .catalog-header {
+    position: sticky;
+    top: 0;
+    z-index: 100;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 2rem;
+    height: 56px;
+    background: rgba(250,250,250,0.85);
+    backdrop-filter: blur(12px);
+    border-bottom: 1px solid var(--border);
+  }
+  .logo {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    text-decoration: none;
+    color: var(--text);
+  }
+  .logo-mark { font-size: 1.3rem; color: var(--accent-2); line-height: 1; }
+  .logo-text { font-size: 1.1rem; font-weight: 800; letter-spacing: -0.03em; }
+
+  .header-nav {
+    display: flex;
+    align-items: center;
+    gap: 1.25rem;
+  }
+  .nav-link {
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: var(--text-2);
+    text-decoration: none;
+    transition: color 0.15s;
+  }
+  .nav-link:hover { color: var(--text); }
+  .user-email {
+    font-size: 0.8rem;
+    color: var(--text-3);
+    font-family: var(--font-mono);
+    display: none;
+  }
+  @media (min-width: 640px) { .user-email { display: block; } }
+  .btn-logout {
+    background: none;
+    border: 1px solid var(--border-2);
+    color: var(--text-2);
+    padding: 0.4rem 0.85rem;
+    border-radius: 7px;
+    font-family: var(--font-display);
+    font-size: 0.82rem;
+    cursor: pointer;
+    transition: border-color 0.15s, color 0.15s;
+  }
+  .btn-logout:hover { border-color: var(--danger); color: var(--danger); }
+  .btn-login {
+    padding: 0.45rem 1rem;
+    background: var(--accent);
+    color: #0e0e11;
+    font-family: var(--font-display);
+    font-weight: 700;
+    font-size: 0.85rem;
+    border-radius: 8px;
+    text-decoration: none;
+    transition: background 0.15s;
+  }
+  .btn-login:hover { background: var(--accent-dim); }
+
+  /* ── Main ── */
+  .catalog-main {
+    flex: 1;
+    max-width: 1200px;
+    width: 100%;
+    margin: 0 auto;
+    padding: 2.5rem 2rem;
+  }
+  .catalog-page-header {
+    margin-bottom: 2rem;
+  }
+  h1 {
+    font-size: 2rem;
+    font-weight: 800;
+    letter-spacing: -0.04em;
+    margin: 0 0 0.25rem;
+  }
+  .subtitle {
+    font-size: 0.875rem;
+    color: var(--text-3);
+    margin: 0;
+    font-family: var(--font-mono);
+  }
+
+  /* ── Grid ── */
+  .palette-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+    gap: 1rem;
+  }
+
+  /* ── Card ── */
+  .palette-card {
+    background: var(--bg-2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    overflow: hidden;
+    cursor: pointer;
+    text-align: left;
+    padding: 0;
+    transition: border-color 0.15s, transform 0.15s, box-shadow 0.15s;
+    width: 100%;
+  }
+  .palette-card:hover {
+    border-color: var(--border-2);
+    transform: translateY(-3px);
+    box-shadow: 0 8px 24px rgba(0,0,0,0.06);
+  }
+
+  .card-strip {
+    height: 80px;
+    display: flex;
+  }
+  .card-swatch { flex: 1; }
+
+  .card-info {
+    padding: 0.75rem 1rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.2rem;
+  }
+  .card-name {
+    font-size: 0.9rem;
+    font-weight: 700;
+    color: var(--text);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .card-creator {
+    font-size: 0.75rem;
+    color: var(--text-3);
+    font-family: var(--font-mono);
+  }
+
+  /* ── Empty ── */
+  .empty-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 1rem;
+    min-height: 300px;
+    color: var(--text-3);
+  }
+  .empty-icon { font-size: 2.5rem; }
+
+  /* ── Modal backdrop ── */
+  .modal-backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.45);
+    backdrop-filter: blur(8px);
+    z-index: 500;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 1.5rem;
+  }
+  .modal-backdrop.hidden { display: none; }
+
+  /* ── Modal container ── */
+  .modal {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    width: 100%;
+    max-width: 600px;
+    max-height: 88vh;
+    /* flex column: franja fija arriba, body con scroll abajo */
+    display: flex;
+    flex-direction: column;
+    position: relative;
+    box-shadow: 0 24px 64px rgba(0,0,0,0.14);
+    animation: modalIn 0.22s cubic-bezier(0.34, 1.2, 0.64, 1);
+  }
+  @keyframes modalIn {
+    from { opacity: 0; transform: scale(0.94) translateY(14px); }
+    to   { opacity: 1; transform: scale(1)    translateY(0); }
+  }
+
+  /* Botón cerrar */
+  .modal-close {
+    position: absolute;
+    top: 0.75rem;
+    right: 0.75rem;
+    z-index: 10;
+    width: 30px;
+    height: 30px;
+    border-radius: 50%;
+    background: rgba(0,0,0,0.3);
+    backdrop-filter: blur(4px);
+    border: none;
+    color: white;
+    font-size: 1.1rem;
+    line-height: 1;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.15s;
+  }
+  .modal-close:hover { background: rgba(0,0,0,0.55); }
+
+  /* Franja de colores — no hace scroll, se queda fija arriba */
+  .modal-strip {
+    height: 180px;
+    display: flex;
+    border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+    overflow: hidden;
+    flex-shrink: 0;
+  }
+  /* Columnas de la franja: JS-created → :global() */
+  :global(.modal-strip-col) {
+    flex: 1;
+    position: relative;
+    transition: flex 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    cursor: default;
+  }
+  :global(.modal-strip-col:hover) { flex: 1.8; }
+  :global(.modal-strip-label) {
+    position: absolute;
+    bottom: 0.75rem;
+    left: 0;
+    right: 0;
+    text-align: center;
+    font-family: var(--font-mono);
+    font-size: 0.68rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    color: white;
+    text-shadow: 0 1px 4px rgba(0,0,0,0.6);
+    opacity: 0;
+    transition: opacity 0.2s;
+  }
+  :global(.modal-strip-col:hover .modal-strip-label) { opacity: 1; }
+
+  /* Cuerpo: sólo esta sección hace scroll */
+  .modal-body {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    padding: 1.5rem;
+    display: flex;
+    flex-direction: column;
+    gap: 1.25rem;
+    scrollbar-width: thin;
+    scrollbar-color: var(--border-2) transparent;
+  }
+  .modal-body::-webkit-scrollbar { width: 4px; }
+  .modal-body::-webkit-scrollbar-track { background: transparent; }
+  .modal-body::-webkit-scrollbar-thumb { background: var(--border-2); border-radius: 4px; }
+
+  /* Nombre y creador */
+  .modal-meta { display: flex; flex-direction: column; gap: 0.25rem; }
+  .modal-name {
+    font-size: 1.5rem;
+    font-weight: 800;
+    letter-spacing: -0.04em;
+    margin: 0;
+    line-height: 1.15;
+  }
+  .modal-creator {
+    font-size: 0.78rem;
+    color: var(--text-3);
+    font-family: var(--font-mono);
+  }
+
+  /* Lista de colores — contenedor estático */
+  .modal-colors { display: flex; flex-direction: column; gap: 0.35rem; }
+
+  /* Filas de color: JS-created → :global() */
+  :global(.modal-color-row) {
+    display: flex;
+    align-items: center;
+    gap: 0.85rem;
+    padding: 0.6rem 0.75rem;
+    background: var(--bg-2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    transition: border-color 0.15s;
+  }
+  :global(.modal-color-row:hover) { border-color: var(--border-2); }
+  :global(.modal-color-dot) {
+    width: 40px;
+    height: 40px;
+    border-radius: 9px;
+    flex-shrink: 0;
+    border: 1px solid rgba(0,0,0,0.07);
+  }
+  :global(.modal-color-info) {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 0.1rem;
+    min-width: 0;
+  }
+  :global(.modal-color-hex) {
+    font-family: var(--font-mono);
+    font-size: 0.88rem;
+    font-weight: 600;
+    color: var(--text);
+  }
+  :global(.modal-color-name) {
+    font-size: 0.74rem;
+    color: var(--text-3);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  :global(.modal-copy-hex) {
+    width: 30px;
+    height: 30px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    background: var(--bg-3);
+    border: 1px solid var(--border);
+    border-radius: 7px;
+    color: var(--text-3);
+    cursor: pointer;
+    transition: border-color 0.15s, color 0.15s;
+  }
+  :global(.modal-copy-hex:hover) { border-color: var(--accent-2); color: var(--accent-2); }
+
+  /* Acción principal */
+  .modal-actions {
+    display: flex;
+    padding-top: 0.25rem;
+    border-top: 1px solid var(--border);
+  }
+  .btn-copy-palette {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.75rem 1.5rem;
+    background: var(--accent);
+    color: #0e0e11;
+    border: none;
+    border-radius: 9px;
+    font-family: var(--font-display);
+    font-weight: 700;
+    font-size: 0.9rem;
+    cursor: pointer;
+    text-decoration: none;
+    transition: background 0.15s, transform 0.1s;
+    width: 100%;
+    justify-content: center;
+  }
+  .btn-copy-palette:hover:not(:disabled) {
+    background: var(--accent-dim);
+    transform: translateY(-1px);
+  }
+  .btn-copy-palette:disabled { opacity: 0.6; cursor: not-allowed; }
+</style>
