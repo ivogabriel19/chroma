@@ -6,6 +6,6 @@ const { data: { session } } = await supabase.auth.getSession();
 if (session) {
   return Astro.redirect('/dashboard');
 } else {
-  return Astro.redirect('/login');
+  return Astro.redirect('/explore');
 }
 ---

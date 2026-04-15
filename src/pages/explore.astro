@@ -3,6 +3,9 @@ import BaseLayout from '../layouts/BaseLayout.astro';
 import { getSessionFromCookies } from '../lib/supabase';
 import { getAllPalettes } from '../lib/palettes';
 
+import { Image } from 'astro:assets';
+import logo from '../assets/logo-256.png';
+
 const cookieHeader = Astro.request.headers.get('cookie') ?? '';
 const cookieMap = Object.fromEntries(
   cookieHeader.split(';').map(c => {
@@ -39,9 +42,11 @@ const allTags = [...new Set(allPalettes.flatMap(p => p.tags ?? []))].sort();
 
     <!-- Header -->
     <header class="catalog-header">
-      <a href="/" class="logo">
-        <span class="logo-mark">◈</span>
-        <span class="logo-text">Paletta</span>
+      <a href="/dashboard" class="logo">
+        <span class="logo-mark">
+          <Image src={logo} alt="">
+        </span>
+        <span class="logo-text">Chroma</span>
       </a>
       <nav class="header-nav">
         {isLoggedIn ? (
@@ -157,9 +162,10 @@ const allTags = [...new Set(allPalettes.flatMap(p => p.tags ?? []))].sort();
                 Copiar al dashboard
               </button>
             ) : (
-              <a href="/login" class="btn-copy-palette">
-                Iniciá sesión para copiar
-              </a>
+              <div class="modal-login-cta">
+                <span class="modal-login-hint">Iniciá sesión para guardar paletas en tu dashboard</span>
+                <a href="/login" class="btn-login-cta">Iniciar sesión</a>
+              </div>
             )}
           </div>
         </div>
@@ -418,6 +424,17 @@ const allTags = [...new Set(allPalettes.flatMap(p => p.tags ?? []))].sort();
 </script>
 
 <style>
+
+    .logo-mark {
+    font-size: 1.3rem;
+    color: var(--accent);
+    line-height: 1;
+
+    & > img {
+      height: 2rem;
+      width: 2rem;
+    }
+  }
   /* ── Shell ── */
   .catalog-shell {
     min-height: 100vh;
@@ -900,6 +917,36 @@ const allTags = [...new Set(allPalettes.flatMap(p => p.tags ?? []))].sort();
     padding-top: 0.25rem;
     border-top: 1px solid var(--border);
   }
+
+  /* CTA para usuarios no logueados */
+  .modal-login-cta {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    width: 100%;
+    padding: 0.5rem 0;
+  }
+  .modal-login-hint {
+    font-size: 0.82rem;
+    color: var(--text-3);
+    flex: 1;
+  }
+  .btn-login-cta {
+    flex-shrink: 0;
+    padding: 0.6rem 1.25rem;
+    background: var(--accent);
+    color: #0e0e11;
+    font-family: var(--font-display);
+    font-weight: 700;
+    font-size: 0.85rem;
+    border-radius: 8px;
+    text-decoration: none;
+    transition: background 0.15s;
+    white-space: nowrap;
+  }
+  .btn-login-cta:hover { background: var(--accent-dim); }
+
   .btn-copy-palette {
     display: inline-flex;
     align-items: center;

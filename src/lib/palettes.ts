@@ -1,4 +1,4 @@
-import { supabase } from './supabase';
+import { supabase, supabasePublic } from './supabase';
 
 export interface Color {
   id: string;
@@ -80,9 +80,9 @@ export async function deletePalette(id: string): Promise<void> {
   // Los colores se eliminan en cascada (ON DELETE CASCADE del schema)
 }
 
-// Nota: requiere política RLS "public read" en la tabla palettes en Supabase
+// Usa supabasePublic para no depender de una sesión de usuario (requiere política RLS "public read")
 export async function getAllPalettes(): Promise<Palette[]> {
-  const { data, error } = await supabase
+  const { data, error } = await supabasePublic
     .from('palettes')
     .select('*, colors(*)')
     .order('created_at', { ascending: false });
