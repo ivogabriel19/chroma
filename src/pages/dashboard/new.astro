@@ -109,7 +109,7 @@ if (!session) return Astro.redirect("/login");
 </AppLayout>
 
 <script>
-  import { generatePalette, enrichWithNames } from "../../lib/colors";
+  import { generatePalette, enrichWithNames, getColorName } from "../../lib/colors";
   import type { GeneratedColor, HarmonyType } from "../../lib/colors";
 
   let currentColors: GeneratedColor[] = [];
@@ -185,20 +185,73 @@ if (!session) return Astro.redirect("/login");
       col.className = "color-col";
       col.style.cssText = `background:${c.hex}; animation-delay:${i * 50}ms`;
 
+      // Picker oculto para editar el color
+      const picker = document.createElement("input");
+      picker.type = "color";
+      picker.value = c.hex;
+      picker.className = "col-picker";
+
       const overlay = document.createElement("div");
       overlay.className = "color-overlay";
-      overlay.innerHTML = `
-      <span class="color-name-display">${c.name ?? ""}</span>
-      <span class="color-hex-display">${c.hex.toUpperCase()}</span>
-      <button class="btn-copy-col" data-hex="${c.hex}">
+
+      const nameDisplay = document.createElement("span");
+      nameDisplay.className = "color-name-display";
+      nameDisplay.textContent = c.name ?? "";
+
+      const hexDisplay = document.createElement("span");
+      hexDisplay.className = "color-hex-display";
+      hexDisplay.textContent = c.hex.toUpperCase();
+
+      const copyBtn = document.createElement("button");
+      copyBtn.className = "btn-copy-col";
+      copyBtn.dataset.hex = c.hex;
+      copyBtn.innerHTML = `
         <svg width="13" height="13" viewBox="0 0 24 24" fill="none">
           <rect x="9" y="9" width="13" height="13" rx="2" stroke="currentColor" stroke-width="2"/>
           <path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1" stroke="currentColor" stroke-width="2"/>
         </svg>
         <span>Copiar</span>
-      </button>
-    `;
+      `;
 
+      const editBtn = document.createElement("button");
+      editBtn.className = "btn-edit-col";
+      editBtn.innerHTML = `
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none">
+          <path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+          <path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+        <span>Editar</span>
+      `;
+
+      // Preview en vivo mientras se arrastra el picker
+      picker.addEventListener("input", () => {
+        col.style.background = picker.value;
+        hexDisplay.textContent = picker.value.toUpperCase();
+      });
+
+      // Commit al cerrar el picker: actualiza datos y busca nombre
+      picker.addEventListener("change", async () => {
+        const newHex = picker.value;
+        currentColors[i] = { ...currentColors[i], hex: newHex };
+        col.style.background = newHex;
+        hexDisplay.textContent = newHex.toUpperCase();
+        copyBtn.dataset.hex = newHex;
+        nameDisplay.textContent = "…";
+        const name = await getColorName(newHex).catch(() => "");
+        currentColors[i].name = name;
+        nameDisplay.textContent = name;
+      });
+
+      editBtn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        picker.click();
+      });
+
+      overlay.appendChild(nameDisplay);
+      overlay.appendChild(hexDisplay);
+      overlay.appendChild(copyBtn);
+      overlay.appendChild(editBtn);
+      col.appendChild(picker);
       col.appendChild(overlay);
       strip.appendChild(col);
     });
@@ -520,6 +573,34 @@ if (!session) return Astro.redirect("/login");
     width: fit-content;
   }
   :global(.btn-copy-col:hover) { background: rgba(255,255,255,0.25); }
+
+  :global(.col-picker) {
+    position: absolute;
+    opacity: 0;
+    width: 0;
+    height: 0;
+    pointer-events: none;
+  }
+
+  :global(.btn-edit-col) {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    margin-top: 0.2rem;
+    padding: 0.35rem 0.7rem;
+    background: rgba(255,255,255,0.15);
+    border: 1px solid rgba(255,255,255,0.25);
+    border-radius: 6px;
+    color: white;
+    font-family: var(--font-display);
+    font-size: 0.75rem;
+    font-weight: 600;
+    cursor: pointer;
+    backdrop-filter: blur(4px);
+    transition: background 0.15s;
+    width: fit-content;
+  }
+  :global(.btn-edit-col:hover) { background: rgba(255,255,255,0.25); }
 
   /* ── Save bar ── */
   .save-bar {

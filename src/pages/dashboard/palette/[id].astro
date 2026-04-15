@@ -42,7 +42,7 @@ const colors = (palette.colors ?? []).sort((a, b) => a.position - b.position);
     <!-- Vista pantalla completa estilo Coolors -->
     <div class="fullscreen-palette">
       {colors.map(c => (
-        <div class="color-col" style={`background:${c.hex}`} data-hex={c.hex}>
+        <div class="color-col" style={`background:${c.hex}`} data-hex={c.hex} data-color-id={c.id}>
           <div class="color-overlay">
             <span class="color-name-display">{c.name ?? ''}</span>
             <span class="color-hex-display">{c.hex.toUpperCase()}</span>
@@ -61,12 +61,19 @@ const colors = (palette.colors ?? []).sort((a, b) => a.position - b.position);
     <!-- Lista detallada -->
     <div class="colors-list">
       {colors.map(c => (
-        <div class="color-row">
+        <div class="color-row" data-color-id={c.id} data-palette-id={palette.id}>
           <div class="color-dot" style={`background:${c.hex}`} />
           <div class="color-details">
             <span class="hex-tag">{c.hex.toUpperCase()}</span>
-            {c.name && <span class="name-tag">{c.name}</span>}
+            <span class="name-tag">{c.name ?? ''}</span>
           </div>
+          <button class="btn-edit-color" title="Editar color">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
+              <path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+              <path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </button>
+          <input type="color" class="color-edit-picker" value={c.hex} />
           <button class="btn-copy-small" data-hex={c.hex}>Copiar HEX</button>
         </div>
       ))}
@@ -75,6 +82,9 @@ const colors = (palette.colors ?? []).sort((a, b) => a.position - b.position);
 </AppLayout>
 
 <script>
+  import { getColorName } from '../../../lib/colors';
+
+  // Botones de copiar
   document.querySelectorAll('[data-hex]').forEach(el => {
     const btn = el.classList.contains('btn-copy-full') || el.classList.contains('btn-copy-small')
       ? el : null;
@@ -89,6 +99,54 @@ const colors = (palette.colors ?? []).sort((a, b) => a.position - b.position);
       const original = span.textContent;
       span.textContent = '✓ Copiado';
       setTimeout(() => span.textContent = original, 1500);
+    });
+  });
+
+  // Edición de colores
+  document.querySelectorAll<HTMLElement>('.color-row').forEach(row => {
+    const colorId = row.dataset.colorId!;
+    const paletteId = row.dataset.paletteId!;
+    const dot = row.querySelector<HTMLElement>('.color-dot')!;
+    const hexTag = row.querySelector<HTMLElement>('.hex-tag')!;
+    const nameTag = row.querySelector<HTMLElement>('.name-tag')!;
+    const editBtn = row.querySelector<HTMLButtonElement>('.btn-edit-color')!;
+    const picker = row.querySelector<HTMLInputElement>('.color-edit-picker')!;
+    const copyBtn = row.querySelector<HTMLButtonElement>('.btn-copy-small')!;
+
+    const fullCol = document.querySelector<HTMLElement>(`.fullscreen-palette [data-color-id="${colorId}"]`);
+    const fullHexDisplay = fullCol?.querySelector<HTMLElement>('.color-hex-display') ?? null;
+    const fullNameDisplay = fullCol?.querySelector<HTMLElement>('.color-name-display') ?? null;
+    const fullCopyBtn = fullCol?.querySelector<HTMLElement>('.btn-copy-full') ?? null;
+
+    editBtn.addEventListener('click', () => picker.click());
+
+    // Preview en vivo
+    picker.addEventListener('input', () => {
+      const hex = picker.value;
+      dot.style.background = hex;
+      if (fullCol) fullCol.style.background = hex;
+    });
+
+    // Commit al cerrar el picker
+    picker.addEventListener('change', async () => {
+      const hex = picker.value;
+      dot.style.background = hex;
+      hexTag.textContent = hex.toUpperCase();
+      copyBtn.dataset.hex = hex;
+      if (fullCol) fullCol.style.background = hex;
+      if (fullHexDisplay) fullHexDisplay.textContent = hex.toUpperCase();
+      if (fullCopyBtn) fullCopyBtn.dataset.hex = hex;
+      nameTag.textContent = '…';
+
+      const name = await getColorName(hex).catch(() => '');
+      nameTag.textContent = name;
+      if (fullNameDisplay) fullNameDisplay.textContent = name;
+
+      await fetch('/api/palettes/update-color', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ colorId, paletteId, hex, name }),
+      }).catch(() => {});
     });
   });
 </script>
@@ -205,6 +263,7 @@ const colors = (palette.colors ?? []).sort((a, b) => a.position - b.position);
     border: 1px solid var(--border);
     border-radius: var(--radius);
     transition: border-color 0.15s;
+    position: relative;
   }
   .color-row:hover { border-color: var(--border-2); }
 
@@ -245,5 +304,30 @@ const colors = (palette.colors ?? []).sort((a, b) => a.position - b.position);
   .btn-copy-small:hover {
     border-color: var(--accent);
     color: var(--accent);
+  }
+
+  .btn-edit-color {
+    padding: 0.35rem 0.5rem;
+    background: var(--bg-3);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--text-3);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    transition: border-color 0.15s, color 0.15s;
+    flex-shrink: 0;
+  }
+  .btn-edit-color:hover {
+    border-color: var(--accent);
+    color: var(--accent);
+  }
+
+  .color-edit-picker {
+    position: absolute;
+    opacity: 0;
+    width: 0;
+    height: 0;
+    pointer-events: none;
   }
 </style>

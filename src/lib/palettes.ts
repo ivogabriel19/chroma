@@ -77,3 +77,16 @@ export async function deletePalette(id: string): Promise<void> {
   if (error) throw error;
   // Los colores se eliminan en cascada (ON DELETE CASCADE del schema)
 }
+
+export async function updateColor(
+  colorId: string,
+  hex: string,
+  name: string | null
+): Promise<void> {
+  const { error } = await supabase
+    .from('colors')
+    .update({ hex, name })
+    .eq('id', colorId);
+
+  if (error) throw error;
+}
